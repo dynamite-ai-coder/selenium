@@ -1,0 +1,16 @@
+Selenium WebDriver Automation Framework
+
+This repository contains automation scripts and tests using Selenium WebDriver.
+
+Features:
+- Web browser automation
+- Automated testing framework
+- Cross-browser support
+- Page Object Model implementation
+
+Setup Instructions:
+1. Install dependencies
+2. Configure webdriver
+3. Run test suites
+
+For more information, see the README.md file.
