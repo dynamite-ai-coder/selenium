@@ -1,16 +1,1034 @@
-Selenium WebDriver Automation Framework
+You are GPT-5.6 / Codex acting as a senior software architect, Python engineer, TypeScript engineer, browser-automation engineer, and AI-agent systems engineer.
 
-This repository contains automation scripts and tests using Selenium WebDriver.
+Build a complete local-first browser-agent application inspired by the functionality of Browser Use, but with original source code, original branding, and an original UI implementation.
+
+Do NOT copy proprietary Browser Use source code, assets, branding, or exact visual design.
+
+The application must run locally and be available at:
+
+http://127.0.0.1:24400
+
+==================================================
+
+1. CORE PRODUCT
+   ==================================================
+
+Build a local AI browser agent with a polished web interface.
+
+The user should be able to type natural-language tasks such as:
+
+"Open example.com and find the pricing page."
+
+"Go to the website and log into my account."
+
+"Open the registration page and fill the form using the information I provide."
+
+"Search the website, compare the results, and summarize them."
+
+The agent must be able to intelligently:
+
+- navigate websites
+- inspect pages
+- identify interactive elements
+- click
+- type
+- fill forms
+- scroll
+- open and switch tabs
+- navigate backward/forward
+- wait for dynamic content
+- take screenshots
+- extract information
+- recover from failed actions
+- perform multi-step tasks
+- ask the user for clarification when necessary
+- pause for human intervention when a website challenge requires it
+
+==================================================
+2. TECHNOLOGY
+
+Use:
+
+BACKEND:
+Python 3.12
+FastAPI
+Uvicorn
+asyncio
+Pydantic v2
+WebSockets
+SQLite
+python-dotenv
+
+BROWSER:
+Current stable Browser Use package/API
+Chromium
+Playwright/CDP where required by the current Browser Use implementation
+
+FRONTEND:
+React
+TypeScript
+Vite
+Tailwind CSS
+
+PYTHON PACKAGE MANAGEMENT:
+uv
+
+Do NOT use Selenium as the primary browser engine.
+
+Do NOT implement a custom browser driver if Browser Use already provides the required functionality.
+
+==================================================
+3. FIRST STEP — INSPECT CURRENT DEPENDENCIES
+
+Before writing implementation code:
+
+1. Inspect the repository.
+2. Inspect Python version.
+3. Inspect whether Browser Use is already installed.
+4. Determine the installed Browser Use version.
+5. Inspect the current Browser Use APIs available in the environment.
+6. Inspect current BrowserSession/BrowserProfile APIs.
+7. Inspect current Agent API.
+8. Inspect current native Groq integration.
+9. Inspect current CDP support.
+10. Inspect current screenshot/browser-state capabilities.
+
+Do not rely on obsolete Browser Use examples.
+
+Use the current installed/recommended API.
+
+If the current Browser Use API differs from older examples, adapt the implementation to the current API.
+
+==================================================
+4. ARCHITECTURE
+
+Create:
+
+React UI
+↓
+WebSocket
+↓
+FastAPI
+↓
+Task Orchestrator
+↓
+Multi-Agent Router
+↓
+Browser Use Agent / BrowserSession
+↓
+Chromium
+
+The backend must remain asynchronous.
+
+Avoid blocking operations inside the FastAPI event loop.
+
+==================================================
+5. USER INTERFACE
+
+Create an original UI inspired by modern browser-agent applications.
+
+Do NOT clone Browser Use's exact design.
+
+Layout:
+
+---
+
+| Local Browser Agent                    ● Connected |
+
+|                         |                         |
+| CHAT                    | BROWSER                 |
+|                         |                         |
+| User message            | live browser preview   |
+|                         |                         |
+| Agent messages          |                         |
+|                         |                         |
+| Agent activity          |                         |
+|                         |                         |
+
+| Type a task...                         [Run]      |
 
 Features:
-- Web browser automation
-- Automated testing framework
-- Cross-browser support
-- Page Object Model implementation
 
-Setup Instructions:
-1. Install dependencies
-2. Configure webdriver
-3. Run test suites
+- chat history
+- streaming agent responses
+- task progress
+- agent activity
+- browser preview
+- current URL
+- browser controls
+- expand browser
+- collapse browser
+- stop
+- pause
+- resume
+- new task
 
-For more information, see the README.md file.
+The browser preview should be expandable to nearly full-screen.
+
+==================================================
+6. BROWSER PREVIEW
+
+The browser must run visibly.
+
+Default:
+
+BROWSER_HEADLESS=false
+
+Create a persistent profile:
+
+./data/browser-profile/
+
+The profile must preserve:
+
+- cookies
+- local storage
+- login sessions
+- browser preferences
+
+Do not expose credentials or cookies to the frontend.
+
+Generate browser screenshots/state updates and stream them through WebSocket.
+
+Make screenshot frequency configurable.
+
+Default:
+
+BROWSER_PREVIEW_FPS=3
+
+==================================================
+7. FIVE GROQ API KEYS
+
+Support five independently configured Groq credentials:
+
+GROQ_API_KEY_1
+GROQ_API_KEY_2
+GROQ_API_KEY_3
+GROQ_API_KEY_4
+GROQ_API_KEY_5
+
+Support independent model configuration:
+
+GROQ_MODEL_1
+GROQ_MODEL_2
+GROQ_MODEL_3
+GROQ_MODEL_4
+GROQ_MODEL_5
+
+Never hard-code keys.
+
+Never expose keys to frontend.
+
+Never print keys in logs.
+
+Never commit keys.
+
+Create:
+
+.env.example
+
+==================================================
+8. MULTI-AGENT SYSTEM
+
+Implement five logical roles:
+
+1. Planner
+2. Browser Operator
+3. Perception
+4. Critic / Recovery
+5. Judge
+
+Default mapping:
+
+Groq #1 → Planner
+Groq #2 → Browser Operator
+Groq #3 → Perception
+Groq #4 → Critic
+Groq #5 → Judge
+
+But implement a ModelRouter so this mapping can change dynamically.
+
+==================================================
+9. DO NOT CALL ALL FIVE MODELS UNNECESSARILY
+
+Performance is a primary requirement.
+
+For simple tasks:
+
+User
+↓
+Browser Operator
+↓
+Action
+
+For complex tasks:
+
+User
+↓
+Planner
+↓
+Browser Operator
+↓
+Perception
+↓
+Action
+↓
+Critic only if required
+↓
+Judge only if ambiguity remains
+
+The orchestrator should dynamically determine how many agents are required.
+
+==================================================
+10. MODEL ROUTER
+
+Implement:
+
+ModelRouter
+
+Track for each configured Groq model:
+
+- latency
+- timeout rate
+- API errors
+- rate-limit events
+- successful responses
+- invalid structured responses
+- task success rate
+
+Use these metrics to select the best model for a role.
+
+If one key is temporarily unavailable:
+
+- mark it unavailable
+- use another configured model
+- retry later
+- do not attempt to circumvent provider limits
+
+==================================================
+11. INTERNAL AGENT PROTOCOL
+
+Do not implement agents communicating using long natural-language conversations.
+
+Create structured Pydantic messages.
+
+Examples:
+
+AgentMessage
+TaskPlan
+BrowserAction
+BrowserActionResult
+PerceptionResult
+VerificationResult
+AgentError
+
+Example:
+
+{
+"agent": "browser_operator",
+"action": "click",
+"target": {
+"description": "Login button"
+},
+"confidence": 0.97,
+"risk": "low",
+"requires_verification": false
+}
+
+==================================================
+12. FASTEST COMMUNICATION PROTOCOL
+
+The user wants the agents to determine the fastest language/protocol for communicating.
+
+Implement this as a controlled benchmark.
+
+At application startup or first initialization, benchmark:
+
+1. normal JSON
+2. compact JSON
+3. Pydantic structured messages
+4. concise text
+
+Measure:
+
+- serialization latency
+- parsing latency
+- token count
+- message size
+- validation failures
+- end-to-end agent latency
+
+Select the fastest reliable protocol.
+
+Store the result:
+
+./data/communication_protocol.json
+
+Do not allow agents to invent an opaque or non-debuggable secret language.
+
+The protocol must remain machine-efficient and human-debuggable.
+
+==================================================
+13. BROWSER STATE
+
+Create a normalized browser state representation.
+
+Include:
+
+- current URL
+- title
+- tabs
+- visible text
+- interactive elements
+- buttons
+- links
+- inputs
+- selected tab
+- screenshot metadata
+
+Do not send an entire DOM tree to every LLM call.
+
+Minimize context.
+
+Use targeted extraction.
+
+==================================================
+14. ACTION EXECUTION
+
+Create a controlled action layer:
+
+BrowserActionExecutor
+
+Supported actions:
+
+- goto
+- click
+- input
+- select
+- scroll
+- press_key
+- wait
+- new_tab
+- switch_tab
+- close_tab
+- screenshot
+- extract
+- go_back
+- go_forward
+- reload
+
+Every action must return:
+
+- success
+- result
+- current URL
+- optional screenshot
+- optional error
+- latency
+
+==================================================
+15. PERFORMANCE
+
+Optimize specifically for low latency.
+
+Use:
+
+- asyncio
+- persistent browser
+- persistent HTTP connections
+- compact prompts
+- minimal browser-state extraction
+- concurrent model calls when safe
+- caching where safe
+- action batching when safe
+- short browser wait times
+- adaptive retries
+- model routing
+- token limits
+- streaming
+
+Use Browser Use's current performance-oriented configuration where compatible with the installed version.
+
+Do not blindly copy old configuration values.
+
+Benchmark every optimization.
+
+==================================================
+16. BROWSER SECURITY / CHALLENGES
+
+The browser should use normal Chromium behavior.
+
+Do NOT implement:
+
+- CAPTCHA solving
+- Cloudflare challenge bypass
+- anti-bot evasion
+- fingerprint spoofing designed to defeat security controls
+- unauthorized authentication bypass
+
+If a CAPTCHA, Cloudflare challenge, MFA challenge, or similar security checkpoint appears:
+
+1. detect it when practical
+2. pause the agent
+3. show the browser to the user
+4. display:
+   "Human interaction required"
+5. allow the user to complete the challenge manually
+6. resume after the user confirms
+
+The system may still use:
+
+- visible Chromium
+- persistent profiles
+- normal CDP
+- normal browser automation
+- cookies from the user's own profile
+
+==================================================
+17. HUMAN-IN-THE-LOOP
+
+Implement:
+
+PAUSE
+RESUME
+STOP
+CONTINUE
+
+When paused:
+
+- browser remains open
+- user can interact manually
+- agent stops issuing actions
+
+When resumed:
+
+- re-read browser state
+- verify current page
+- continue safely
+
+When stopped:
+
+- cancel agent tasks
+- stop LLM calls where possible
+- keep browser profile
+- keep browser open unless configured otherwise
+
+==================================================
+18. WEBSOCKET EVENTS
+
+Implement:
+
+task.created
+task.started
+task.planning
+agent.started
+agent.progress
+agent.decision
+browser.started
+browser.navigation
+browser.action
+browser.action_result
+browser.screenshot
+browser.state
+verification.started
+verification.completed
+task.waiting_for_user
+task.paused
+task.resumed
+task.completed
+task.failed
+task.stopped
+
+Every event:
+
+{
+"timestamp": "...",
+"task_id": "...",
+"type": "...",
+"payload": {}
+}
+
+==================================================
+19. API
+
+Implement:
+
+POST /api/tasks
+GET /api/tasks/{task_id}
+
+POST /api/tasks/{task_id}/pause
+POST /api/tasks/{task_id}/resume
+POST /api/tasks/{task_id}/stop
+
+GET /api/browser/state
+GET /api/browser/tabs
+
+POST /api/browser/navigate
+POST /api/browser/reload
+POST /api/browser/screenshot
+
+GET /api/health
+GET /api/status
+
+WebSocket:
+
+/ws/tasks/{task_id}
+
+Never expose API keys through any endpoint.
+
+==================================================
+20. TASK HISTORY
+
+SQLite database.
+
+Store:
+
+- task ID
+- timestamp
+- user request
+- status
+- duration
+- result
+- error
+- number of LLM calls
+- browser action count
+
+Never store:
+
+- API keys
+- passwords
+- cookies
+- authentication headers
+- session tokens
+
+==================================================
+21. FILE UPLOAD
+
+Allow local file uploads.
+
+Store:
+
+./data/uploads/
+
+Files must not become publicly accessible.
+
+The agent can reference uploaded files where appropriate.
+
+==================================================
+22. LOGGING
+
+Use structured logging.
+
+Include:
+
+- task lifecycle
+- model latency
+- browser latency
+- action results
+- retries
+- errors
+- model selection
+
+Never log secrets.
+
+==================================================
+23. CONFIGURATION
+
+Create .env.example:
+
+GROQ_API_KEY_1=
+GROQ_API_KEY_2=
+GROQ_API_KEY_3=
+GROQ_API_KEY_4=
+GROQ_API_KEY_5=
+
+GROQ_MODEL_1=
+GROQ_MODEL_2=
+GROQ_MODEL_3=
+GROQ_MODEL_4=
+GROQ_MODEL_5=
+
+HOST=127.0.0.1
+PORT=24400
+
+BROWSER_HEADLESS=false
+BROWSER_USER_DATA_DIR=./data/browser-profile
+
+BROWSER_PREVIEW_FPS=3
+
+AGENT_MAX_STEPS=50
+AGENT_TIMEOUT=600
+LLM_TIMEOUT=30
+
+MAX_PARALLEL_AGENTS=5
+
+LOG_LEVEL=INFO
+
+==================================================
+24. PROJECT STRUCTURE
+
+Use:
+
+project/
+├── backend/
+│   └── app/
+│       ├── main.py
+│       ├── config.py
+│       ├── api/
+│       ├── agents/
+│       ├── browser/
+│       ├── llm/
+│       ├── orchestrator/
+│       ├── communication/
+│       ├── events/
+│       ├── tasks/
+│       ├── safety/
+│       └── database/
+│
+├── frontend/
+│   └── src/
+│       ├── components/
+│       ├── hooks/
+│       ├── services/
+│       ├── types/
+│       └── App.tsx
+│
+├── data/
+├── tests/
+├── scripts/
+├── .env.example
+├── README.md
+├── run.py
+├── install.sh
+└── install.ps1
+
+==================================================
+25. TESTING
+
+Create unit tests for:
+
+- configuration
+- Groq router
+- model selection
+- communication protocol
+- agent orchestration
+- browser state
+- action executor
+- WebSocket events
+- pause/resume
+- task cancellation
+
+Create integration tests for:
+
+- opening a website
+- reading page state
+- clicking
+- typing
+- navigation
+- multiple steps
+- browser interruption
+- agent recovery
+
+Tests must work without real Groq keys by using mocks.
+
+==================================================
+26. BENCHMARK
+
+Create:
+
+scripts/benchmark.py
+
+Measure:
+
+- LLM latency
+- browser action latency
+- page-state latency
+- screenshot latency
+- total task latency
+- model calls
+- average tokens
+- task success rate
+
+Compare:
+
+A. single agent
+B. planner + browser operator
+C. planner + operator + critic
+D. full five-agent architecture
+
+Automatically generate a report.
+
+==================================================
+27. MODEL SELECTION
+
+Do not assume that every Groq model is equally suitable for browser automation.
+
+At startup:
+
+- validate configured models
+- perform a small structured-output capability test
+- measure latency
+- measure response validity
+- record results
+
+Select suitable models for each role.
+
+Never hard-code an obsolete model name.
+
+==================================================
+28. CURRENT BROWSER USE API
+
+Use the currently installed/current Browser Use implementation.
+
+Inspect the current package before coding.
+
+Use its current:
+
+- Agent API
+- BrowserSession
+- BrowserProfile
+- ChatGroq integration
+- CDP capabilities
+- browser-state extraction
+- screenshot functionality
+
+Do not use deprecated APIs simply because they appear in older tutorials.
+
+==================================================
+29. STARTUP
+
+Create:
+
+./run.sh
+./run.ps1
+
+Running the project should eventually produce:
+
+Local Browser Agent
+http://127.0.0.1:24400
+
+Startup output should show only safe metadata:
+
+- server URL
+- browser status
+- number of configured model slots
+- model availability
+- warnings
+
+Never print API keys.
+
+==================================================
+30. ERROR RECOVERY
+
+The application must gracefully recover from:
+
+- Groq timeout
+- Groq rate limit
+- invalid model response
+- malformed structured output
+- webpage navigation failure
+- missing element
+- browser crash
+- WebSocket disconnect
+- user interruption
+
+If Chromium crashes:
+
+1. detect
+2. restart
+3. restore persistent profile
+4. reconnect
+5. re-read browser state
+6. continue only if safe
+
+==================================================
+31. SECURITY
+
+Bind only to:
+
+127.0.0.1
+
+by default.
+
+Do not expose the application to LAN or public internet unless explicitly configured.
+
+Protect:
+
+- browser profile
+- uploaded files
+- SQLite database
+- task history
+- API credentials
+
+Add .gitignore entries for:
+
+.env
+data/
+browser profile directories
+logs
+temporary files
+
+==================================================
+32. README
+
+Write a complete README containing:
+
+- architecture
+- installation
+- setup
+- environment variables
+- Groq configuration
+- model routing
+- browser profile
+- UI
+- WebSocket architecture
+- performance tuning
+- benchmark usage
+- troubleshooting
+- security
+- human-in-the-loop challenges
+
+==================================================
+33. DEVELOPMENT WORKFLOW
+
+Do not generate the entire project blindly.
+
+Work incrementally:
+
+PHASE 1
+Inspect environment and current Browser Use APIs.
+
+PHASE 2
+Create backend skeleton.
+
+PHASE 3
+Implement BrowserSession integration.
+
+PHASE 4
+Implement Groq adapter and five-key router.
+
+PHASE 5
+Implement agent orchestrator.
+
+PHASE 6
+Implement communication protocol benchmark.
+
+PHASE 7
+Implement FastAPI/WebSocket layer.
+
+PHASE 8
+Implement React UI.
+
+PHASE 9
+Implement browser preview.
+
+PHASE 10
+Implement pause/resume/stop.
+
+PHASE 11
+Implement SQLite task history.
+
+PHASE 12
+Implement tests.
+
+PHASE 13
+Run benchmarks.
+
+PHASE 14
+Fix performance/reliability issues.
+
+PHASE 15
+Perform complete end-to-end test.
+
+After each phase, run appropriate tests.
+
+Do not claim success without actually testing.
+
+==================================================
+34. FINAL ACCEPTANCE TEST
+
+The project is complete only when:
+
+[ ] http://127.0.0.1:24400 opens
+
+[ ] chat works
+
+[ ] Chromium launches visibly
+
+[ ] browser preview works
+
+[ ] preview can be expanded
+
+[ ] natural-language browser tasks work
+
+[ ] Browser Use integration uses current APIs
+
+[ ] all five Groq configurations are supported
+
+[ ] model routing works
+
+[ ] one unavailable Groq key does not crash the application
+
+[ ] multi-agent orchestration works
+
+[ ] structured agent communication works
+
+[ ] communication benchmark works
+
+[ ] pause works
+
+[ ] resume works
+
+[ ] stop works
+
+[ ] browser profile persists
+
+[ ] task history works
+
+[ ] WebSocket reconnect works
+
+[ ] tests pass
+
+[ ] benchmark executes
+
+[ ] no secrets are exposed
+
+[ ] browser challenges pause for human intervention
+
+[ ] README is complete
+
+==================================================
+35. FINAL REPORT
+
+At the end report:
+
+1. architecture
+2. files created
+3. dependencies
+4. installation commands
+5. configuration
+6. test results
+7. benchmark results
+8. model-selection results
+9. performance bottlenecks
+10. known limitations
+11. exact command to start the application
+
+IMPORTANT:
+
+Build a real working application.
+
+Do not build a mock.
+
+Do not fake browser screenshots.
+
+Do not fake LLM responses.
+
+Do not hard-code credentials.
+
+Do not implement Cloudflare/CAPTCHA bypass.
+
+Do not blindly use obsolete Browser Use APIs.
+
+Use the current Browser Use package available at implementation time.
+
+Start by inspecting the repository and installed environment.
