@@ -53,6 +53,22 @@ def _write_url(path: Path, url: str) -> None:
     os.replace(temporary, path)
 
 
+def _parse_geolocation(value: str) -> list[float] | None:
+    parts = [part.strip() for part in value.split(",")]
+    if len(parts) != 2:
+        return None
+    try:
+        return [float(parts[0]), float(parts[1])]
+    except ValueError:
+        return None
+
+
+def _describe_proxy(proxy: str) -> str:
+    """Return a log-safe proxy description (never includes credentials)."""
+    host = proxy.rsplit("@", 1)[-1]
+    return f"proxy={host}"
+
+
 def main() -> int:
     try:
         from seleniumbase import sb_cdp
@@ -75,23 +91,55 @@ def main() -> int:
     browser_args = [
         "--remote-allow-origins=*",
         "--no-sandbox",
+        "--disable-dev-shm-usage",
         "--disable-gpu",
         "--disable-sync",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--password-store=basic",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=Translate,MediaRouter,OptimizationHints",
         "--start-maximized",
         f"--window-size={width},{height}",
     ]
 
-    print(f"[browser] launching {chrome_bin} with SeleniumBase Pure CDP Mode (DISPLAY={display})")
+    launch_kwargs: dict = dict(
+        headless=False,
+        headed=True,
+        sandbox=False,
+        user_data_dir=str(profile_dir),
+        browser_executable_path=chrome_bin,
+        downloads_path=str(downloads_dir),
+        browser_args=browser_args,
+    )
+
+    proxy = _env("BROWSER_PROXY")
+    if proxy:
+        launch_kwargs["proxy"] = proxy
+    timezone = _env("BROWSER_TZ")
+    if timezone:
+        launch_kwargs["tzone"] = timezone
+    language = _env("BROWSER_LANG")
+    if language:
+        launch_kwargs["lang"] = language
+    geolocation = _parse_geolocation(_env("BROWSER_GEOLOCATION"))
+    if geolocation:
+        launch_kwargs["geoloc"] = geolocation
+
+    extras = []
+    if proxy:
+        extras.append(_describe_proxy(proxy))
+    if timezone:
+        extras.append(f"tz={timezone}")
+    if language:
+        extras.append(f"lang={language}")
+    if geolocation:
+        extras.append("geoloc=on")
+    suffix = f" ({', '.join(extras)})" if extras else ""
+
+    print(f"[browser] launching {chrome_bin} with SeleniumBase Pure CDP Mode (DISPLAY={display}){suffix}")
     try:
-        sb = sb_cdp.Chrome(
-            headless=False,
-            headed=True,
-            sandbox=False,
-            user_data_dir=str(profile_dir),
-            browser_executable_path=chrome_bin,
-            downloads_path=str(downloads_dir),
-            browser_args=browser_args,
-        )
+        sb = sb_cdp.Chrome(**launch_kwargs)
     except Exception as exc:
         print(f"[browser] SeleniumBase failed to launch Chromium: {exc}", file=sys.stderr)
         return 1

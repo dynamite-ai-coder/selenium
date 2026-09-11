@@ -16,8 +16,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NOVNC_DIR=/usr/share/novnc \
     BROWSER_HEADLESS=false
 
+# Use the real Google Chrome (not Debian's Chromium build) on amd64 to keep
+# the TLS/UA/JS fingerprint consistent with a normal browser. On other
+# architectures fall back to the distro Chromium package.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium \
       xvfb \
       x11vnc \
       x11-utils \
@@ -39,6 +41,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       procps \
       tini \
+    && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+         curl -fsSL -o /tmp/google-chrome.deb \
+           https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+         && apt-get install -y --no-install-recommends /tmp/google-chrome.deb \
+         && rm -f /tmp/google-chrome.deb; \
+       else \
+         apt-get install -y --no-install-recommends chromium; \
+       fi \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
