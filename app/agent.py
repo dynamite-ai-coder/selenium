@@ -18,6 +18,7 @@ from typing import Any
 from browser_use import Agent
 
 from app.browser import BrowserUnavailableError, browser_manager
+from app.cf_turnstile import solve_turnstile, _is_cloudflare_page
 from app.config import settings
 from app.llm import LLMConfigError, get_llm
 from app.utils import register_secret, safe_error_message, truncate
@@ -240,6 +241,18 @@ class AgentRunner:
             await emit("agent_action", label, step=step_number, url=url, title=title)
         with contextlib.suppress(Exception):
             await self._emit_new_downloads(self._started_at)
+
+        # Auto-solve Cloudflare Turnstile if enabled
+        if settings.cf_bypass_enabled:
+            with contextlib.suppress(Exception):
+                cdp_url = browser_manager.cdp_url
+                if cdp_url and await _is_cloudflare_page(cdp_url):
+                    await emit("agent_action", "Cloudflare detected, solving captcha...", step=step_number, url=url, title=title)
+                    result = await solve_turnstile(cdp_url, max_attempts=3, timeout=25.0)
+                    if result["solved"]:
+                        await emit("agent_action", "Cloudflare bypassed!", step=step_number, url=url, title=title)
+                    else:
+                        await emit("agent_action", f"Cloudflare bypass failed: {result.get('error', 'unknown')}", step=step_number, url=url, title=title)
 
     async def _on_done(self, history: Any) -> None:
         logger.debug("Agent signalled completion")
