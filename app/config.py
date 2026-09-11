@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     novnc_port: int = 6080
 
     # --- Cloudflare Bypass ---------------------------------------------------
-    cf_bypass_enabled: bool = False
+    cf_bypass_enabled: bool = True
     cf_bypass_timeout: float = 60.0
     cf_bypass_reconnect_time: float = 5.0
     cf_bypass_incognito: bool = False
