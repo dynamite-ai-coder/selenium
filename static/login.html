@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in - AI Browser Agent</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="brand login-brand">
+      <span class="brand-mark" aria-hidden="true">AI</span>
+      <div>
+        <h1>AI Browser Agent</h1>
+        <p class="subtitle">Authenticated access only</p>
+      </div>
+    </div>
+
+    <form id="login-form" autocomplete="current-password">
+      <label class="field">
+        <span>Password</span>
+        <input id="password" type="password" name="password" required autofocus
+               autocomplete="current-password" placeholder="Enter APP_PASSWORD" />
+      </label>
+      <button id="login-btn" class="btn btn-primary btn-block" type="submit">Sign in</button>
+      <p id="login-error" class="error-bar hidden" role="alert"></p>
+    </form>
+
+    <p class="muted login-hint">The password is configured with the APP_PASSWORD environment variable.</p>
+  </main>
+
+  <script>
+    (function () {
+      "use strict";
+      var form = document.getElementById("login-form");
+      var input = document.getElementById("password");
+      var button = document.getElementById("login-btn");
+      var error = document.getElementById("login-error");
+
+      function showError(message) {
+        error.textContent = message;
+        error.classList.remove("hidden");
+      }
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        error.classList.add("hidden");
+        button.disabled = true;
+        button.textContent = "Signing in...";
+
+        fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: input.value })
+        })
+          .then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+              if (response.ok) {
+                window.location.href = "/";
+                return;
+              }
+              showError(data.detail || "Login failed.");
+              button.disabled = false;
+              button.textContent = "Sign in";
+            });
+          })
+          .catch(function () {
+            showError("Network error. Please try again.");
+            button.disabled = false;
+            button.textContent = "Sign in";
+          });
+      });
+    })();
+  </script>
+</body>
+</html>

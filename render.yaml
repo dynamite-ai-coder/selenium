@@ -1,0 +1,35 @@
+# Render Blueprint for the AI Browser Agent.
+#
+# Deploy: push this repository to GitHub, then in Render choose
+# "New > Blueprint" and point it at the repository. Render reads this file.
+# Secrets are NOT hardcoded: set APP_PASSWORD and DEEPSEEK_API_KEY in the
+# Render dashboard (Environment Variables) when prompted.
+services:
+  - type: web
+    name: ai-browser-agent
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: standard
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_PASSWORD
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-v4-flash
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com/v1
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: BROWSER_HEADLESS
+        value: "false"
+      - key: SCREEN_WIDTH
+        value: "1600"
+      - key: SCREEN_HEIGHT
+        value: "900"

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Browser Agent</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">AI</span>
+      <div>
+        <h1>AI Browser Agent</h1>
+        <p class="subtitle">DeepSeek + live Chromium</p>
+      </div>
+    </div>
+    <div class="statuses">
+      <span class="badge" id="browser-badge" title="Browser connection">
+        <i class="dot"></i><span>Browser</span>
+      </span>
+      <span class="badge" id="llm-badge" title="LLM configuration">
+        <i class="dot"></i><span>LLM</span>
+      </span>
+      <span class="badge" id="ws-badge" title="Event stream">
+        <i class="dot"></i><span>Live</span>
+      </span>
+      <button id="logout-btn" class="btn btn-ghost btn-small" type="button">Logout</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel chat-panel">
+      <div class="panel-head">
+        <h2>Chat</h2>
+        <div class="head-actions">
+          <button id="clear-btn" class="btn btn-ghost btn-small" type="button">Clear chat</button>
+        </div>
+      </div>
+
+      <div id="messages" class="messages" aria-live="polite">
+        <div class="message assistant">
+          <div class="bubble">Describe a browser task, for example: “Open Google and search for OpenAI”.</div>
+        </div>
+      </div>
+
+      <div id="typing" class="typing hidden">
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="typing-text">Agent is working...</span>
+      </div>
+
+      <div class="panel-foot">
+        <div id="attachments" class="attachments hidden"></div>
+        <div class="composer">
+          <label class="btn btn-ghost btn-icon" title="Attach files">
+            <input id="file-input" type="file" multiple hidden />
+            <span aria-hidden="true">+</span>
+          </label>
+          <textarea id="task-input" rows="2" placeholder="Type a task... (Enter to send, Shift+Enter for a new line)"></textarea>
+          <button id="stop-btn" class="btn btn-danger hidden" type="button">Stop</button>
+          <button id="send-btn" class="btn btn-primary" type="button">Send</button>
+        </div>
+        <div id="error-bar" class="error-bar hidden" role="alert"></div>
+      </div>
+    </section>
+
+    <section class="panel browser-panel">
+      <div class="panel-head">
+        <h2>Live Browser</h2>
+        <div class="head-actions">
+          <span id="browser-state" class="muted">checking...</span>
+          <button id="reconnect-btn" class="btn btn-ghost btn-small" type="button">Reconnect browser</button>
+        </div>
+      </div>
+
+      <div class="browser-frame">
+        <iframe id="vnc-frame" title="Live browser preview" src="about:blank" allow="clipboard-read; clipboard-write"></iframe>
+        <div id="vnc-fallback" class="vnc-fallback hidden">
+          <p>Live browser preview is not available yet.</p>
+          <p class="muted">In Docker, noVNC is served at /novnc. Check that x11vnc and websockify are running.</p>
+        </div>
+      </div>
+
+      <div class="files">
+        <div class="files-head">
+          <h3>Files</h3>
+          <span class="muted">Uploaded and generated files</span>
+        </div>
+        <div id="file-list" class="file-list">
+          <span class="muted">No files yet.</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+# Environment / secrets
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime data
+browser_profile/
+uploads/
+downloads/
+logs/
+*.log
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
