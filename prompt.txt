@@ -1,1034 +1,502 @@
-You are GPT-5.6 / Codex acting as a senior software architect, Python engineer, TypeScript engineer, browser-automation engineer, and AI-agent systems engineer.
+Build a complete production-ready web application that runs on Render and provides a Browser Use-style AI agent with a web chat interface and a live GUI browser preview.
 
-Build a complete local-first browser-agent application inspired by the functionality of Browser Use, but with original source code, original branding, and an original UI implementation.
+Main goal
 
-Do NOT copy proprietary Browser Use source code, assets, branding, or exact visual design.
+Create a web application where a user can:
 
-The application must run locally and be available at:
+1. Open the application URL hosted on Render.
+2. Authenticate with a password.
+3. Enter instructions in a ChatGPT-style chat interface.
+4. Send the task to an AI browser agent.
+5. The AI agent uses DeepSeek via API key as its LLM.
+6. The agent controls a real Chromium/Chrome browser.
+7. The browser runs in GUI/headed mode, not headless mode.
+8. The user watches the browser live through an embedded browser preview/noVNC interface.
+9. The AI navigates websites, clicks buttons, types into fields, scrolls, reads pages, and completes normal browser automation tasks.
 
-http://127.0.0.1:24400
+Technology
 
-==================================================
+Use a reliable Python-based architecture.
 
-1. CORE PRODUCT
-   ==================================================
+Preferred stack:
 
-Build a local AI browser agent with a polished web interface.
+- Python 3.11+
+- FastAPI
+- Uvicorn
+- Browser Use
+- Playwright/Chromium as required by Browser Use
+- DeepSeek API
+- noVNC
+- Xvfb
+- XFCE
+- WebSocket communication
+- HTML/CSS/JavaScript frontend
 
-The user should be able to type natural-language tasks such as:
+Do not use Selenium unless Browser Use specifically requires it. Prefer Browser Use with Playwright.
 
-"Open example.com and find the pricing page."
+Render compatibility
 
-"Go to the website and log into my account."
+The application must:
 
-"Open the registration page and fill the form using the information I provide."
+- listen on "0.0.0.0:$PORT"
+- work correctly with Render Web Services
+- include a "Dockerfile"
+- include "render.yaml"
+- include "requirements.txt" if appropriate
+- include all required startup scripts
+- automatically start the virtual X display
+- automatically start XFCE
+- automatically start Chrome/Chromium
+- automatically start noVNC/websockify
+- automatically start the FastAPI server
 
-"Search the website, compare the results, and summarize them."
+The container must not require SSH or manual terminal commands after deployment.
 
-The agent must be able to intelligently:
+Use a single Render service unless there is a strong technical reason to split components.
 
-- navigate websites
-- inspect pages
-- identify interactive elements
-- click
-- type
-- fill forms
-- scroll
-- open and switch tabs
-- navigate backward/forward
-- wait for dynamic content
-- take screenshots
-- extract information
-- recover from failed actions
-- perform multi-step tasks
-- ask the user for clarification when necessary
-- pause for human intervention when a website challenge requires it
+Authentication
 
-==================================================
-2. TECHNOLOGY
+Protect the entire web interface with a password login page.
 
-Use:
+Default password:
 
-BACKEND:
-Python 3.12
-FastAPI
-Uvicorn
-asyncio
-Pydantic v2
-WebSockets
-SQLite
-python-dotenv
-
-BROWSER:
-Current stable Browser Use package/API
-Chromium
-Playwright/CDP where required by the current Browser Use implementation
-
-FRONTEND:
-React
-TypeScript
-Vite
-Tailwind CSS
-
-PYTHON PACKAGE MANAGEMENT:
-uv
-
-Do NOT use Selenium as the primary browser engine.
-
-Do NOT implement a custom browser driver if Browser Use already provides the required functionality.
-
-==================================================
-3. FIRST STEP — INSPECT CURRENT DEPENDENCIES
-
-Before writing implementation code:
-
-1. Inspect the repository.
-2. Inspect Python version.
-3. Inspect whether Browser Use is already installed.
-4. Determine the installed Browser Use version.
-5. Inspect the current Browser Use APIs available in the environment.
-6. Inspect current BrowserSession/BrowserProfile APIs.
-7. Inspect current Agent API.
-8. Inspect current native Groq integration.
-9. Inspect current CDP support.
-10. Inspect current screenshot/browser-state capabilities.
-
-Do not rely on obsolete Browser Use examples.
-
-Use the current installed/recommended API.
-
-If the current Browser Use API differs from older examples, adapt the implementation to the current API.
-
-==================================================
-4. ARCHITECTURE
-
-Create:
-
-React UI
-↓
-WebSocket
-↓
-FastAPI
-↓
-Task Orchestrator
-↓
-Multi-Agent Router
-↓
-Browser Use Agent / BrowserSession
-↓
-Chromium
-
-The backend must remain asynchronous.
-
-Avoid blocking operations inside the FastAPI event loop.
-
-==================================================
-5. USER INTERFACE
-
-Create an original UI inspired by modern browser-agent applications.
-
-Do NOT clone Browser Use's exact design.
-
-Layout:
-
----
-
-| Local Browser Agent                    ● Connected |
-
-|                         |                         |
-| CHAT                    | BROWSER                 |
-|                         |                         |
-| User message            | live browser preview   |
-|                         |                         |
-| Agent messages          |                         |
-|                         |                         |
-| Agent activity          |                         |
-|                         |                         |
-
-| Type a task...                         [Run]      |
-
-Features:
-
-- chat history
-- streaming agent responses
-- task progress
-- agent activity
-- browser preview
-- current URL
-- browser controls
-- expand browser
-- collapse browser
-- stop
-- pause
-- resume
-- new task
-
-The browser preview should be expandable to nearly full-screen.
-
-==================================================
-6. BROWSER PREVIEW
-
-The browser must run visibly.
-
-Default:
-
-BROWSER_HEADLESS=false
-
-Create a persistent profile:
-
-./data/browser-profile/
-
-The profile must preserve:
-
-- cookies
-- local storage
-- login sessions
-- browser preferences
-
-Do not expose credentials or cookies to the frontend.
-
-Generate browser screenshots/state updates and stream them through WebSocket.
-
-Make screenshot frequency configurable.
-
-Default:
-
-BROWSER_PREVIEW_FPS=3
-
-==================================================
-7. FIVE GROQ API KEYS
-
-Support five independently configured Groq credentials:
-
-GROQ_API_KEY_1
-GROQ_API_KEY_2
-GROQ_API_KEY_3
-GROQ_API_KEY_4
-GROQ_API_KEY_5
-
-Support independent model configuration:
-
-GROQ_MODEL_1
-GROQ_MODEL_2
-GROQ_MODEL_3
-GROQ_MODEL_4
-GROQ_MODEL_5
-
-Never hard-code keys.
-
-Never expose keys to frontend.
-
-Never print keys in logs.
-
-Never commit keys.
-
-Create:
-
-.env.example
-
-==================================================
-8. MULTI-AGENT SYSTEM
-
-Implement five logical roles:
-
-1. Planner
-2. Browser Operator
-3. Perception
-4. Critic / Recovery
-5. Judge
-
-Default mapping:
-
-Groq #1 → Planner
-Groq #2 → Browser Operator
-Groq #3 → Perception
-Groq #4 → Critic
-Groq #5 → Judge
-
-But implement a ModelRouter so this mapping can change dynamically.
-
-==================================================
-9. DO NOT CALL ALL FIVE MODELS UNNECESSARILY
-
-Performance is a primary requirement.
-
-For simple tasks:
-
-User
-↓
-Browser Operator
-↓
-Action
-
-For complex tasks:
-
-User
-↓
-Planner
-↓
-Browser Operator
-↓
-Perception
-↓
-Action
-↓
-Critic only if required
-↓
-Judge only if ambiguity remains
-
-The orchestrator should dynamically determine how many agents are required.
-
-==================================================
-10. MODEL ROUTER
-
-Implement:
-
-ModelRouter
-
-Track for each configured Groq model:
-
-- latency
-- timeout rate
-- API errors
-- rate-limit events
-- successful responses
-- invalid structured responses
-- task success rate
-
-Use these metrics to select the best model for a role.
-
-If one key is temporarily unavailable:
-
-- mark it unavailable
-- use another configured model
-- retry later
-- do not attempt to circumvent provider limits
-
-==================================================
-11. INTERNAL AGENT PROTOCOL
-
-Do not implement agents communicating using long natural-language conversations.
-
-Create structured Pydantic messages.
-
-Examples:
-
-AgentMessage
-TaskPlan
-BrowserAction
-BrowserActionResult
-PerceptionResult
-VerificationResult
-AgentError
-
-Example:
-
-{
-"agent": "browser_operator",
-"action": "click",
-"target": {
-"description": "Login button"
-},
-"confidence": 0.97,
-"risk": "low",
-"requires_verification": false
-}
-
-==================================================
-12. FASTEST COMMUNICATION PROTOCOL
-
-The user wants the agents to determine the fastest language/protocol for communicating.
-
-Implement this as a controlled benchmark.
-
-At application startup or first initialization, benchmark:
-
-1. normal JSON
-2. compact JSON
-3. Pydantic structured messages
-4. concise text
-
-Measure:
-
-- serialization latency
-- parsing latency
-- token count
-- message size
-- validation failures
-- end-to-end agent latency
-
-Select the fastest reliable protocol.
-
-Store the result:
-
-./data/communication_protocol.json
-
-Do not allow agents to invent an opaque or non-debuggable secret language.
-
-The protocol must remain machine-efficient and human-debuggable.
-
-==================================================
-13. BROWSER STATE
-
-Create a normalized browser state representation.
-
-Include:
-
-- current URL
-- title
-- tabs
-- visible text
-- interactive elements
-- buttons
-- links
-- inputs
-- selected tab
-- screenshot metadata
-
-Do not send an entire DOM tree to every LLM call.
-
-Minimize context.
-
-Use targeted extraction.
-
-==================================================
-14. ACTION EXECUTION
-
-Create a controlled action layer:
-
-BrowserActionExecutor
-
-Supported actions:
-
-- goto
-- click
-- input
-- select
-- scroll
-- press_key
-- wait
-- new_tab
-- switch_tab
-- close_tab
-- screenshot
-- extract
-- go_back
-- go_forward
-- reload
-
-Every action must return:
-
-- success
-- result
-- current URL
-- optional screenshot
-- optional error
-- latency
-
-==================================================
-15. PERFORMANCE
-
-Optimize specifically for low latency.
-
-Use:
-
-- asyncio
-- persistent browser
-- persistent HTTP connections
-- compact prompts
-- minimal browser-state extraction
-- concurrent model calls when safe
-- caching where safe
-- action batching when safe
-- short browser wait times
-- adaptive retries
-- model routing
-- token limits
-- streaming
-
-Use Browser Use's current performance-oriented configuration where compatible with the installed version.
-
-Do not blindly copy old configuration values.
-
-Benchmark every optimization.
-
-==================================================
-16. BROWSER SECURITY / CHALLENGES
-
-The browser should use normal Chromium behavior.
-
-Do NOT implement:
-
-- CAPTCHA solving
-- Cloudflare challenge bypass
-- anti-bot evasion
-- fingerprint spoofing designed to defeat security controls
-- unauthorized authentication bypass
-
-If a CAPTCHA, Cloudflare challenge, MFA challenge, or similar security checkpoint appears:
-
-1. detect it when practical
-2. pause the agent
-3. show the browser to the user
-4. display:
-   "Human interaction required"
-5. allow the user to complete the challenge manually
-6. resume after the user confirms
-
-The system may still use:
-
-- visible Chromium
-- persistent profiles
-- normal CDP
-- normal browser automation
-- cookies from the user's own profile
-
-==================================================
-17. HUMAN-IN-THE-LOOP
-
-Implement:
-
-PAUSE
-RESUME
-STOP
-CONTINUE
-
-When paused:
-
-- browser remains open
-- user can interact manually
-- agent stops issuing actions
-
-When resumed:
-
-- re-read browser state
-- verify current page
-- continue safely
-
-When stopped:
-
-- cancel agent tasks
-- stop LLM calls where possible
-- keep browser profile
-- keep browser open unless configured otherwise
-
-==================================================
-18. WEBSOCKET EVENTS
-
-Implement:
-
-task.created
-task.started
-task.planning
-agent.started
-agent.progress
-agent.decision
-browser.started
-browser.navigation
-browser.action
-browser.action_result
-browser.screenshot
-browser.state
-verification.started
-verification.completed
-task.waiting_for_user
-task.paused
-task.resumed
-task.completed
-task.failed
-task.stopped
-
-Every event:
-
-{
-"timestamp": "...",
-"task_id": "...",
-"type": "...",
-"payload": {}
-}
-
-==================================================
-19. API
-
-Implement:
-
-POST /api/tasks
-GET /api/tasks/{task_id}
-
-POST /api/tasks/{task_id}/pause
-POST /api/tasks/{task_id}/resume
-POST /api/tasks/{task_id}/stop
-
-GET /api/browser/state
-GET /api/browser/tabs
-
-POST /api/browser/navigate
-POST /api/browser/reload
-POST /api/browser/screenshot
-
-GET /api/health
-GET /api/status
-
-WebSocket:
-
-/ws/tasks/{task_id}
-
-Never expose API keys through any endpoint.
-
-==================================================
-20. TASK HISTORY
-
-SQLite database.
-
-Store:
-
-- task ID
-- timestamp
-- user request
-- status
-- duration
-- result
-- error
-- number of LLM calls
-- browser action count
-
-Never store:
-
-- API keys
-- passwords
-- cookies
-- authentication headers
-- session tokens
-
-==================================================
-21. FILE UPLOAD
-
-Allow local file uploads.
-
-Store:
-
-./data/uploads/
-
-Files must not become publicly accessible.
-
-The agent can reference uploaded files where appropriate.
-
-==================================================
-22. LOGGING
-
-Use structured logging.
-
-Include:
-
-- task lifecycle
-- model latency
-- browser latency
-- action results
-- retries
-- errors
-- model selection
-
-Never log secrets.
-
-==================================================
-23. CONFIGURATION
-
-Create .env.example:
-
-GROQ_API_KEY_1=
-GROQ_API_KEY_2=
-GROQ_API_KEY_3=
-GROQ_API_KEY_4=
-GROQ_API_KEY_5=
-
-GROQ_MODEL_1=
-GROQ_MODEL_2=
-GROQ_MODEL_3=
-GROQ_MODEL_4=
-GROQ_MODEL_5=
-
-HOST=127.0.0.1
-PORT=24400
-
-BROWSER_HEADLESS=false
-BROWSER_USER_DATA_DIR=./data/browser-profile
-
-BROWSER_PREVIEW_FPS=3
-
-AGENT_MAX_STEPS=50
-AGENT_TIMEOUT=600
-LLM_TIMEOUT=30
-
-MAX_PARALLEL_AGENTS=5
-
-LOG_LEVEL=INFO
-
-==================================================
-24. PROJECT STRUCTURE
-
-Use:
-
-project/
-├── backend/
-│   └── app/
-│       ├── main.py
-│       ├── config.py
-│       ├── api/
-│       ├── agents/
-│       ├── browser/
-│       ├── llm/
-│       ├── orchestrator/
-│       ├── communication/
-│       ├── events/
-│       ├── tasks/
-│       ├── safety/
-│       └── database/
-│
-├── frontend/
-│   └── src/
-│       ├── components/
-│       ├── hooks/
-│       ├── services/
-│       ├── types/
-│       └── App.tsx
-│
-├── data/
-├── tests/
-├── scripts/
-├── .env.example
-├── README.md
-├── run.py
-├── install.sh
-└── install.ps1
-
-==================================================
-25. TESTING
-
-Create unit tests for:
-
-- configuration
-- Groq router
-- model selection
-- communication protocol
-- agent orchestration
-- browser state
-- action executor
-- WebSocket events
-- pause/resume
-- task cancellation
-
-Create integration tests for:
-
-- opening a website
-- reading page state
-- clicking
-- typing
-- navigation
-- multiple steps
-- browser interruption
-- agent recovery
-
-Tests must work without real Groq keys by using mocks.
-
-==================================================
-26. BENCHMARK
-
-Create:
-
-scripts/benchmark.py
-
-Measure:
-
-- LLM latency
-- browser action latency
-- page-state latency
-- screenshot latency
-- total task latency
-- model calls
-- average tokens
-- task success rate
-
-Compare:
-
-A. single agent
-B. planner + browser operator
-C. planner + operator + critic
-D. full five-agent architecture
-
-Automatically generate a report.
-
-==================================================
-27. MODEL SELECTION
-
-Do not assume that every Groq model is equally suitable for browser automation.
-
-At startup:
-
-- validate configured models
-- perform a small structured-output capability test
-- measure latency
-- measure response validity
-- record results
-
-Select suitable models for each role.
-
-Never hard-code an obsolete model name.
-
-==================================================
-28. CURRENT BROWSER USE API
-
-Use the currently installed/current Browser Use implementation.
-
-Inspect the current package before coding.
-
-Use its current:
-
-- Agent API
-- BrowserSession
-- BrowserProfile
-- ChatGroq integration
-- CDP capabilities
-- browser-state extraction
-- screenshot functionality
-
-Do not use deprecated APIs simply because they appear in older tutorials.
-
-==================================================
-29. STARTUP
-
-Create:
-
-./run.sh
-./run.ps1
-
-Running the project should eventually produce:
-
-Local Browser Agent
-http://127.0.0.1:24400
-
-Startup output should show only safe metadata:
-
-- server URL
-- browser status
-- number of configured model slots
-- model availability
-- warnings
-
-Never print API keys.
-
-==================================================
-30. ERROR RECOVERY
-
-The application must gracefully recover from:
-
-- Groq timeout
-- Groq rate limit
-- invalid model response
-- malformed structured output
-- webpage navigation failure
-- missing element
-- browser crash
-- WebSocket disconnect
-- user interruption
-
-If Chromium crashes:
-
-1. detect
-2. restart
-3. restore persistent profile
-4. reconnect
-5. re-read browser state
-6. continue only if safe
-
-==================================================
-31. SECURITY
-
-Bind only to:
-
-127.0.0.1
-
-by default.
-
-Do not expose the application to LAN or public internet unless explicitly configured.
-
-Protect:
-
-- browser profile
-- uploaded files
-- SQLite database
-- task history
-- API credentials
-
-Add .gitignore entries for:
-
-.env
-data/
-browser profile directories
-logs
-temporary files
-
-==================================================
-32. README
-
-Write a complete README containing:
-
-- architecture
-- installation
-- setup
-- environment variables
-- Groq configuration
-- model routing
-- browser profile
-- UI
-- WebSocket architecture
-- performance tuning
-- benchmark usage
-- troubleshooting
-- security
-- human-in-the-loop challenges
-
-==================================================
-33. DEVELOPMENT WORKFLOW
-
-Do not generate the entire project blindly.
-
-Work incrementally:
-
-PHASE 1
-Inspect environment and current Browser Use APIs.
-
-PHASE 2
-Create backend skeleton.
-
-PHASE 3
-Implement BrowserSession integration.
-
-PHASE 4
-Implement Groq adapter and five-key router.
-
-PHASE 5
-Implement agent orchestrator.
-
-PHASE 6
-Implement communication protocol benchmark.
-
-PHASE 7
-Implement FastAPI/WebSocket layer.
-
-PHASE 8
-Implement React UI.
-
-PHASE 9
-Implement browser preview.
-
-PHASE 10
-Implement pause/resume/stop.
-
-PHASE 11
-Implement SQLite task history.
-
-PHASE 12
-Implement tests.
-
-PHASE 13
-Run benchmarks.
-
-PHASE 14
-Fix performance/reliability issues.
-
-PHASE 15
-Perform complete end-to-end test.
-
-After each phase, run appropriate tests.
-
-Do not claim success without actually testing.
-
-==================================================
-34. FINAL ACCEPTANCE TEST
-
-The project is complete only when:
-
-[ ] http://127.0.0.1:24400 opens
-
-[ ] chat works
-
-[ ] Chromium launches visibly
-
-[ ] browser preview works
-
-[ ] preview can be expanded
-
-[ ] natural-language browser tasks work
-
-[ ] Browser Use integration uses current APIs
-
-[ ] all five Groq configurations are supported
-
-[ ] model routing works
-
-[ ] one unavailable Groq key does not crash the application
-
-[ ] multi-agent orchestration works
-
-[ ] structured agent communication works
-
-[ ] communication benchmark works
-
-[ ] pause works
-
-[ ] resume works
-
-[ ] stop works
-
-[ ] browser profile persists
-
-[ ] task history works
-
-[ ] WebSocket reconnect works
-
-[ ] tests pass
-
-[ ] benchmark executes
-
-[ ] no secrets are exposed
-
-[ ] browser challenges pause for human intervention
-
-[ ] README is complete
-
-==================================================
-35. FINAL REPORT
-
-At the end report:
-
-1. architecture
-2. files created
-3. dependencies
-4. installation commands
-5. configuration
-6. test results
-7. benchmark results
-8. model-selection results
-9. performance bottlenecks
-10. known limitations
-11. exact command to start the application
+"Dupa1234@"
 
 IMPORTANT:
 
-Build a real working application.
+Do not hardcode the password directly into application logic.
 
-Do not build a mock.
+Use:
 
-Do not fake browser screenshots.
+"APP_PASSWORD"
 
-Do not fake LLM responses.
+as an environment variable.
 
-Do not hard-code credentials.
+For local development, provide a ".env.example" containing:
 
-Do not implement Cloudflare/CAPTCHA bypass.
+"APP_PASSWORD=Dupa1234@"
 
-Do not blindly use obsolete Browser Use APIs.
+The application must reject unauthenticated access to the chat and browser preview.
 
-Use the current Browser Use package available at implementation time.
+Use secure HTTP-only session cookies or another appropriate server-side authentication mechanism.
 
-Start by inspecting the repository and installed environment.
+Do not expose the password in frontend JavaScript.
+
+DeepSeek integration
+
+Implement DeepSeek as the primary LLM provider.
+
+The API key must be configurable through:
+
+"DEEPSEEK_API_KEY"
+
+Do not hardcode the API key.
+
+Also make the DeepSeek model configurable through:
+
+"DEEPSEEK_MODEL"
+
+Use a sensible current DeepSeek model by default, but allow the user to change it through the environment variable.
+
+The implementation must use Browser Use's supported DeepSeek/OpenAI-compatible LLM integration whenever possible.
+
+Create a clean abstraction such as:
+
+"llm.py"
+
+so that the LLM provider can later be changed without rewriting the browser agent.
+
+Handle:
+
+- API errors
+- timeouts
+- rate limits
+- invalid API keys
+- empty responses
+- connection failures
+
+Show useful errors in the web UI without exposing secrets.
+
+Browser agent
+
+Create a Browser Use agent that receives tasks from the chat.
+
+Example:
+
+User:
+
+"Open Google and search for OpenAI."
+
+The agent should control the visible browser.
+
+The browser must run in a virtual graphical environment:
+
+Xvfb → XFCE → Chromium/Chrome
+
+The agent must not use headless mode.
+
+Configure a persistent browser profile so cookies and session state survive during the running service.
+
+The agent should be able to:
+
+- open URLs
+- navigate
+- click
+- type
+- press keyboard keys
+- scroll
+- inspect page content
+- interact with forms
+- select options
+- wait for page changes
+- handle normal JavaScript-heavy websites
+- take screenshots when needed
+- report task completion or failure
+
+Implement reasonable timeouts and recovery logic.
+
+Live browser GUI
+
+The most important UI requirement is a live browser view.
+
+The user must be able to see the actual Chromium desktop/browser running on Render.
+
+Use:
+
+- Xvfb
+- XFCE
+- x11vnc
+- noVNC
+- websockify
+
+or an equivalent reliable implementation.
+
+Expose the browser desktop through the application.
+
+The frontend must contain a browser-preview panel displaying the live noVNC session.
+
+The user must not need a separate SSH connection.
+
+Prefer embedding the noVNC viewer directly into the application page using an iframe or the noVNC JavaScript client.
+
+The browser preview should resize reasonably with the web page.
+
+The noVNC endpoint must be protected by the same authenticated session as the main application. Do not expose an unauthenticated VNC password or public VNC port.
+
+Frontend
+
+Create a modern dark web interface inspired by Browser Use and AI browser agents.
+
+Layout:
+
+┌──────────────────────────────────────────────────────────────┐
+│ AI Browser Agent                                             │
+├───────────────────────────────┬──────────────────────────────┤
+│ Chat                          │ Live Browser                 │
+│                               │                              │
+│ User message                  │ Chromium GUI                │
+│ AI response                   │                              │
+│ Browser action/status         │                              │
+├───────────────────────────────┴──────────────────────────────┤
+│ [ Type a task...                                      ] [Send]│
+└──────────────────────────────────────────────────────────────┘
+
+The browser preview should be clearly visible beside the chat on desktop.
+
+On mobile, automatically switch to:
+
+Chat
+↓
+Browser Preview
+
+Include:
+
+- login screen
+- chat messages
+- user/assistant message styling
+- task status
+- loading indicator
+- “Agent is working...” state
+- browser connection status
+- Send button
+- Enter-to-send
+- Stop/Cancel task button
+- Clear chat button
+- Reconnect browser button
+- file upload control
+- safe file download controls where applicable
+
+WebSocket
+
+Use WebSockets for real-time communication.
+
+The frontend should receive events such as:
+
+- "task_started"
+- "agent_thinking"
+- "agent_action"
+- "browser_connected"
+- "browser_disconnected"
+- "task_completed"
+- "task_failed"
+- "log"
+- "error"
+
+Do not expose hidden chain-of-thought.
+
+Only show safe, concise action/status information such as:
+
+- “Opening website...”
+- “Clicking Search...”
+- “Typing query...”
+- “Waiting for page...”
+- “Task completed.”
+
+Implement reconnect logic and display the browser connection state clearly.
+
+Task execution
+
+Do not block the FastAPI event loop while the Browser Use agent is running.
+
+Run agent tasks asynchronously in the background.
+
+Only allow one active browser task per browser session unless the implementation safely supports concurrency.
+
+If a task is already running, the UI should show:
+
+“Agent is currently busy.”
+
+The Stop button should attempt to cancel the active task and cleanly release resources.
+
+Ensure cancellation does not leave orphaned processes or corrupted browser state.
+
+File support
+
+Add basic chat file upload support.
+
+The user should be able to upload files through the chat interface.
+
+Store uploaded files in a temporary working directory.
+
+Make uploaded files available to the browser agent when appropriate.
+
+Limit file size and validate filenames.
+
+Do not allow arbitrary filesystem paths from the browser or client.
+
+Provide a safe way to download generated files from the application.
+
+Protect downloads with authentication and prevent path traversal.
+
+Configuration
+
+Create ".env.example" containing:
+
+APP_PASSWORD=Dupa1234@
+DEEPSEEK_API_KEY=
+DEEPSEEK_MODEL=
+PORT=10000
+
+Do not commit ".env".
+
+Create ".gitignore" that excludes:
+
+.env
+__pycache__/
+*.pyc
+browser_profile/
+uploads/
+logs/
+.venv/
+
+Project structure
+
+Use a clean structure similar to:
+
+app/
+  main.py
+  auth.py
+  config.py
+  llm.py
+  agent.py
+  browser.py
+  websocket.py
+  models.py
+  utils.py
+
+static/
+  index.html
+  login.html
+  app.js
+  styles.css
+
+scripts/
+  start_browser.sh
+  start_desktop.sh
+  start_novnc.sh
+  start.sh
+
+uploads/
+Dockerfile
+render.yaml
+requirements.txt
+.env.example
+.gitignore
+README.md
+
+Adjust the structure if necessary, but keep the project clean and maintainable.
+
+Docker
+
+Build a complete Docker image containing everything necessary:
+
+- Python
+- FastAPI
+- Browser Use dependencies
+- Chromium/Chrome
+- Playwright dependencies
+- Xvfb
+- XFCE
+- x11vnc
+- noVNC
+- websockify
+- required fonts
+- required system libraries
+
+The Docker container must start all services reliably.
+
+Do not assume that Render provides a graphical environment.
+
+The Docker image itself must create the graphical environment.
+
+Use a non-root runtime user where practical, while ensuring all graphical and browser processes work correctly.
+
+Startup
+
+Create a robust startup process.
+
+Startup order should approximately be:
+
+1. Start Xvfb.
+2. Set "DISPLAY".
+3. Start XFCE.
+4. Start Chromium/Chrome in headed mode.
+5. Start VNC server.
+6. Start noVNC/websockify.
+7. Start FastAPI/Uvicorn.
+
+Add health checks or readiness checks where useful.
+
+The FastAPI service must remain the main process expected by Render.
+
+Ensure the startup script forwards signals and exits correctly if a critical service fails.
+
+Health endpoint
+
+Implement:
+
+"GET /health"
+
+returning JSON such as:
+
+{
+  "status": "ok",
+  "browser": "connected",
+  "llm": "configured"
+}
+
+Do not expose secrets.
+
+The endpoint may report degraded status when the browser or LLM is unavailable, but it must remain safe and useful for Render health checks.
+
+Logging
+
+Implement useful server-side logging.
+
+Log:
+
+- startup
+- browser startup
+- browser connection
+- agent task start
+- task completion
+- task failure
+- API errors
+
+Never log:
+
+- DeepSeek API keys
+- application password
+- cookies
+- authentication tokens
+- user passwords entered into websites
+- sensitive uploaded file contents
+
+Safety
+
+This is a general-purpose browser automation application.
+
+Do not implement credential stuffing, account cracking, CAPTCHA bypassing, unauthorized access, malware, or other abusive functionality.
+
+Normal authorized form filling and browser automation are supported.
+
+Add clear safeguards and user-facing errors for unsupported or unsafe requests where appropriate.
+
+README
+
+Create a detailed README explaining:
+
+1. What the project does.
+2. Architecture.
+3. Local installation.
+4. Docker usage.
+5. Environment variables.
+6. How to configure DeepSeek.
+7. How to deploy to Render.
+8. How authentication works.
+9. How the live browser preview works.
+10. Troubleshooting Chrome/Xvfb/noVNC problems.
+11. Render memory considerations.
+12. How to upload and download files.
+13. How to stop a running task.
+14. Security considerations and limitations.
+
+Include exact commands for local Docker testing, including port mapping and environment-file usage.
+
+Render deployment
+
+The application must be ready to connect to a GitHub repository and deploy on Render.
+
+"render.yaml" should configure the web service appropriately.
+
+Do not use hardcoded secrets in "render.yaml".
+
+Document that the following variables must be added in Render Environment Variables:
+
+- "APP_PASSWORD"
+- "DEEPSEEK_API_KEY"
+- "DEEPSEEK_MODEL"
+
+Use Render's "$PORT".
+
+Configure the service to use the Dockerfile and expose only the required HTTP service port.
+
+Do not expose internal VNC ports publicly.
+
+Important implementation requirement
+
+Before finishing, actually inspect the generated project for broken imports, incorrect startup commands, missing system packages, incorrect ports, authentication gaps, unsafe file handling, and incompatible Browser Use APIs.
+
+Use the currently installed/current Browser Use API rather than relying on outdated examples.
+
+If Browser Use's API has changed, adapt the implementation accordingly.
+
+Make the project runnable.
+
+Run local syntax checks, import checks, and Docker/build checks where possible.
+
+Fix all errors you find.
+
+The final result must be a complete working repository, not merely a code example.
+
+Return all required project files with their complete contents, clearly labeled by file path. Do not omit implementation details, configuration files, startup scripts, Docker configuration, frontend assets, or README instructions.
