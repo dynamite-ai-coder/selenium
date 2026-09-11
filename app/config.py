@@ -64,11 +64,24 @@ class Settings(BaseSettings):
     cdp_url_file: str = "/tmp/cdp_url"
     chrome_bin: str = ""
     browser_profile_dir: str = "browser_profile"
+    # Stealth / localization. Empty values keep the browser defaults.
+    # BROWSER_PROXY accepts "host:port", "user:pass@host:port" or a full
+    # URL with scheme (http://, https://, socks5://).
+    browser_proxy: str = ""
+    browser_tz: str = ""
+    browser_lang: str = ""
+    browser_geolocation: str = ""  # "lat,lon"
     downloads_dir: str = "downloads"
     uploads_dir: str = "uploads"
     novnc_dir: str = "/usr/share/novnc"
     vnc_port: int = 5900
     novnc_port: int = 6080
+
+    # --- Cloudflare Bypass ---------------------------------------------------
+    cf_bypass_enabled: bool = False
+    cf_bypass_timeout: float = 60.0
+    cf_bypass_reconnect_time: float = 5.0
+    cf_bypass_incognito: bool = False
 
     # --- Agent --------------------------------------------------------------
     agent_max_steps: int = 100
