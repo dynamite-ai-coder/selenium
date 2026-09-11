@@ -79,6 +79,14 @@ FastAPI (app/main.py)                     ┌───────────�
 | `CDP_URL` | `http://127.0.0.1:9222` | Fallback CDP endpoint, used only if `CDP_URL_FILE` does not exist. |
 | `SELENIUMBASE_PYTHON` | auto | Interpreter with SeleniumBase installed for the launcher. |
 | `BROWSER_PROFILE_DIR` | `browser_profile` | Persistent browser profile. |
+| `BROWSER_PROXY` | *(empty)* | Proxy for the whole browser: `host:port`, `user:pass@host:port` or a URL (`http://`, `socks5://`). |
+| `BROWSER_TZ` | *(empty)* | IANA timezone reported by the browser, e.g. `Europe/Warsaw`. Keep it consistent with the proxy. |
+| `BROWSER_LANG` | *(empty)* | UI language/locale, e.g. `pl-PL` or `en-US`. |
+| `BROWSER_GEOLOCATION` | *(empty)* | Geolocation reported by the browser: `lat,lon`, e.g. `52.2297,21.0122`. |
+| `CF_BYPASS_ENABLED` | `false` | Enable automatic Cloudflare Turnstile bypass using SeleniumBase UC Mode. |
+| `CF_BYPASS_TIMEOUT` | `60` | Timeout for Cloudflare bypass attempts (seconds). |
+| `CF_BYPASS_RECONNECT_TIME` | `5` | Reconnect time for UC mode (seconds). |
+| `CF_BYPASS_INCognito` | `false` | Use incognito mode for Cloudflare bypass. |
 | `UPLOADS_DIR` / `DOWNLOADS_DIR` | `uploads` / `downloads` | File directories. |
 | `MAX_UPLOAD_MB` | `10` | Upload size limit. |
 | `AGENT_MAX_STEPS` | `100` | Browser Use step limit. |
@@ -218,6 +226,40 @@ reports `task_stopped`. Only one task can run at a time; a second request gets
 | XFCE does not start | Ensure `dbus-x11` is installed and `HOME` is writable by the runtime user. |
 | `Target closed` errors | Restart the task or use **Reconnect browser**; the monitor reconnects automatically. |
 | Slow first task | Chromium cold start + model latency; the first action can take a few seconds. |
+| Cloudflare / "Verify you are human" | Run `python scripts/check_stealth.py` and compare with <https://bot-detector.rebrowser.net/>. The Render datacenter IP is usually the dominant signal - configure `BROWSER_PROXY` (residential/mobile) first, keep `BROWSER_TZ`/`BROWSER_LANG` consistent with it. The live noVNC view can also be used to complete a challenge manually. |
+
+## 12b. Cloudflare Turnstile Bypass
+
+The agent includes automatic Cloudflare Turnstile bypass powered by
+[SeleniumBase UC Mode](https://github.com/1837620622/cloudflare-bypass-2026).
+
+**How it works:**
+- `app/cloudflare_bypass.py` provides async bypass using SeleniumBase UC Mode
+- Detects Cloudflare challenge pages by DOM/text indicators
+- Performs OS-level captcha click via `uc_gui_click_captcha`
+- Exports `cf_clearance` cookie for session reuse
+
+**Configuration (.env):**
+```bash
+CF_BYPASS_ENABLED=true          # Enable bypass
+CF_BYPASS_TIMEOUT=60            # Timeout in seconds
+CF_BYPASS_RECONNECT_TIME=5      # UC reconnect time
+CF_BYPASS_INCognito=false       # Use incognito mode
+```
+
+**Requirements:**
+- SeleniumBase must be installed in the isolated venv (`/opt/seleniumbase-venv`)
+- Residential/mobile proxy strongly recommended (datacenter IPs are flagged)
+- Headed browser with display (Xvfb on Linux servers)
+
+**Usage in code:**
+```python
+from app.cloudflare_bypass import bypass_url
+
+result = await bypass_url("https://example.com", proxy="http://proxy:8080")
+if result["success"]:
+    print(result["cf_clearance"])
+```
 
 ## 13. Render memory considerations
 
@@ -237,4 +279,11 @@ restarts. `--shm-size` does not apply on Render; the image passes
   rejected by a server-side filter, but this is a safeguard, not a sandbox.
 - Secrets are redacted from logs; never put secrets into task text.
 - This is a general-purpose browser automation tool, not an anonymity tool:
-  websites can see the Render datacenter IP.
+  websites can see the Render datacenter IP. `BROWSER_PROXY` (residential or
+  mobile) is the single most effective mitigation for bot challenges.
+- Anti-bot systems (Cloudflare, DataDome, ...) also detect the automation
+  protocol itself: Browser Use attaches over CDP and calls `Runtime.enable`
+  (`browser_use/actor/page.py`), which is a known signal. Browser-side flags
+  help, but no configuration can guarantee that an automated session will
+  never be challenged - treat challenges as expected and only automate pages
+  you are allowed to automate.
