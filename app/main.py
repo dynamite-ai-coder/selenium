@@ -94,7 +94,11 @@ async def lifespan(app: FastAPI):
         logger.warning("APP_PASSWORD is not set - the web UI will reject all logins")
     if not settings.llm_configured:
         logger.warning("DEEPSEEK_API_KEY is not set - the agent cannot run tasks")
-    logger.info("Starting AI Browser Agent (display=%s, cdp=%s)", settings.display, settings.cdp_url)
+    logger.info(
+        "Starting AI Browser Agent (display=%s, cdp=%s)",
+        settings.display,
+        browser_manager.cdp_url or settings.cdp_url,
+    )
 
     browser_manager.start_monitor()
     warm_up = asyncio.create_task(_warm_up_browser(), name="browser-warmup")
@@ -463,4 +467,4 @@ if settings.novnc_path.exists():
 
 @app.get("/api/browser", response_model=BrowserStatus)
 async def api_browser() -> BrowserStatus:
-    return BrowserStatus(status=await browser_manager.status(), cdp_url=settings.cdp_url)
+    return BrowserStatus(status=await browser_manager.status(), cdp_url=browser_manager.cdp_url)

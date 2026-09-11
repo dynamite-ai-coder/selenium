@@ -1,9 +1,14 @@
 """Browser lifecycle management.
 
-The container starts Chromium in headed mode inside Xvfb/XFCE (see
-``scripts/start_browser.sh``). This module connects Browser Use to that
+The container starts Chromium in headed mode inside Xvfb/XFCE via
+SeleniumBase Pure CDP Mode (see ``scripts/start_browser.sh`` and
+``scripts/start_browser.py``). This module connects Browser Use to that
 already-running browser over CDP so the agent controls the *visible*
 browser and the user can watch every action through noVNC.
+
+SeleniumBase chooses the remote-debugging port dynamically and publishes
+the real endpoint in ``CDP_URL_FILE``; ``settings.cdp_url`` is only the
+fallback used when that file is absent (for example local development).
 
 If no CDP endpoint is available (for example local development on a
 desktop), it falls back to letting Browser Use launch a headed local
@@ -14,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 import httpx
 from browser_use import BrowserProfile, BrowserSession
@@ -26,6 +32,22 @@ logger = logging.getLogger("browser_agent.browser")
 
 class BrowserUnavailableError(RuntimeError):
     """Raised when no browser can be reached or launched."""
+
+
+def runtime_cdp_url() -> str:
+    """Return the CDP endpoint of the SeleniumBase-launched browser.
+
+    The launcher writes the real URL (dynamic port) to ``CDP_URL_FILE``.
+    When the file is missing or invalid, fall back to ``settings.cdp_url``.
+    """
+    path = Path(settings.cdp_url_file)
+    try:
+        candidate = path.read_text(encoding="utf-8").strip().rstrip("/")
+    except OSError:
+        candidate = ""
+    if candidate.startswith(("http://", "https://")):
+        return candidate
+    return settings.cdp_url.rstrip("/")
 
 
 def _profile(**overrides) -> BrowserProfile:
@@ -70,13 +92,19 @@ class BrowserManager:
         self._last_connected: bool | None = None
 
     # -- status ------------------------------------------------------------
+    @property
+    def cdp_url(self) -> str:
+        """Current CDP endpoint (SeleniumBase publishes a dynamic port)."""
+        return runtime_cdp_url()
+
     async def is_cdp_reachable(self) -> bool:
-        if not settings.cdp_url:
+        url = self.cdp_url
+        if not url:
             return False
-        url = settings.cdp_url.rstrip("/") + "/json/version"
+        endpoint = url.rstrip("/") + "/json/version"
         try:
             async with httpx.AsyncClient(timeout=2.5) as client:
-                response = await client.get(url)
+                response = await client.get(endpoint)
                 return response.status_code == 200
         except Exception:
             return False
@@ -105,9 +133,10 @@ class BrowserManager:
                 self._session = None
 
             # Preferred: connect to the Chromium instance started in the container.
-            if await self.is_cdp_reachable():
-                logger.info("Connecting to CDP browser at %s", settings.cdp_url)
-                session = BrowserSession(browser_profile=_profile(cdp_url=settings.cdp_url))
+            cdp_url = self.cdp_url
+            if cdp_url and await self.is_cdp_reachable():
+                logger.info("Connecting to SeleniumBase CDP browser at %s", cdp_url)
+                session = BrowserSession(browser_profile=_profile(cdp_url=cdp_url))
                 await session.start()
                 self._session = session
                 return session
@@ -122,8 +151,8 @@ class BrowserManager:
                 return session
 
             raise BrowserUnavailableError(
-                "Browser is not available. The Chromium/CDP service is not reachable "
-                f"at {settings.cdp_url} and no local Chrome binary was found."
+                "Browser is not available. The SeleniumBase Chromium/CDP service is not "
+                f"reachable at {self.cdp_url or settings.cdp_url} and no local Chrome binary was found."
             )
 
     async def restart(self) -> BrowserSession:

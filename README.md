@@ -14,7 +14,11 @@ single Docker container and is ready to deploy on **Render**.
 - Password-protected web interface (session cookie, HTTP-only).
 - Chat panel where you type browser tasks, e.g. *"Open Google and search for OpenAI"*.
 - DeepSeek LLM drives a [Browser Use](https://github.com/browser-use/browser-use) agent.
-- Chromium runs **headed** inside Xvfb + XFCE, never headless.
+- Chromium is launched by [SeleniumBase](https://github.com/seleniumbase/SeleniumBase)
+  in **Pure CDP Mode** (stealthy, no chromedriver) and runs **headed** inside
+  Xvfb + XFCE, never headless.
+- Browser Use attaches to that same visible browser over the Chrome DevTools
+  Protocol and performs every action on it.
 - Live browser view is embedded with noVNC in the right-hand panel.
 - Real-time WebSocket status: `task_started`, `agent_action`, `task_completed`,
   `task_failed`, `browser_connected`, `browser_disconnected`, `error`, ...
@@ -31,11 +35,13 @@ Browser (user)
   ▼
 FastAPI (app/main.py)                     ┌──────────────────────────────┐
   ├── /            chat UI (static/)      │ Chromium (headed)            │
-  ├── /ws          WebSocket event bus    │   ▲ CDP :9222                │
+  ├── /ws          WebSocket event bus    │   ▲ CDP (dynamic port)       │
   ├── /api/task    starts AgentRunner     │   │                          │
-  ├── /api/upload  file uploads           │ XFCE on Xvfb :99             │
+  ├── /api/upload  file uploads           │ SeleniumBase Pure CDP Mode   │
   ├── /api/download/{name} downloads      │   ▲                          │
-  └── /websockify  authenticated proxy ───┼─► x11vnc :5900               │
+  └── /websockify  authenticated proxy ───┼─► XFCE on Xvfb :99           │
+                                          │   ▲                          │
+                                          │ x11vnc :5900                 │
                                           │   ▲                          │
                                           │ websockify :6080 (noVNC)     │
                                           └──────────────────────────────┘
@@ -46,10 +52,12 @@ FastAPI (app/main.py)                     ┌───────────�
 - `app/config.py` - all settings from environment variables.
 - `app/llm.py` - LLM provider abstraction (DeepSeek by default).
 - `app/agent.py` - async Browser Use runner with safe status events + cancellation.
-- `app/browser.py` - connects Browser Use to the visible Chromium over CDP.
+- `app/browser.py` - connects Browser Use to the visible Chromium over CDP;
+  reads the real endpoint published by the SeleniumBase launcher.
 - `app/websocket.py` - connection manager / event bus.
 - `static/` - dark chat UI + login page.
-- `scripts/` - startup order: Xvfb -> XFCE -> x11vnc/noVNC -> Chromium -> uvicorn.
+- `scripts/start_browser.py` - standalone SeleniumBase Pure CDP Mode launcher.
+- `scripts/` - startup order: Xvfb -> XFCE -> x11vnc/noVNC -> SeleniumBase Chromium -> uvicorn.
 - `Dockerfile`, `render.yaml` - container and Render blueprint.
 
 ## 3. Environment variables
@@ -67,7 +75,9 @@ FastAPI (app/main.py)                     ┌───────────�
 | `DISPLAY` | `:99` | X display used by Xvfb/XFCE/Chromium. |
 | `SCREEN_WIDTH` / `SCREEN_HEIGHT` | `1920` / `1080` | Virtual desktop size. |
 | `BROWSER_HEADLESS` | `false` | Keep `false` for the live preview. |
-| `CDP_URL` | `http://127.0.0.1:9222` | Chromium DevTools endpoint. |
+| `CDP_URL_FILE` | `/tmp/cdp_url` | File where the SeleniumBase launcher publishes the real CDP endpoint (dynamic port). |
+| `CDP_URL` | `http://127.0.0.1:9222` | Fallback CDP endpoint, used only if `CDP_URL_FILE` does not exist. |
+| `SELENIUMBASE_PYTHON` | auto | Interpreter with SeleniumBase installed for the launcher. |
 | `BROWSER_PROFILE_DIR` | `browser_profile` | Persistent browser profile. |
 | `UPLOADS_DIR` / `DOWNLOADS_DIR` | `uploads` / `downloads` | File directories. |
 | `MAX_UPLOAD_MB` | `10` | Upload size limit. |
@@ -83,6 +93,12 @@ cp .env.example .env          # edit APP_PASSWORD and DEEPSEEK_API_KEY
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
+# SeleniumBase pins its own dependencies (they conflict with Browser Use),
+# so install it in a separate environment and point the launcher at it:
+python -m venv /tmp/seleniumbase-venv
+/tmp/seleniumbase-venv/bin/pip install seleniumbase==4.54.1
+export SELENIUMBASE_PYTHON=/tmp/seleniumbase-venv/bin/python
+
 # optional: start the graphical stack locally (Linux desktops only)
 bash scripts/start_desktop.sh
 bash scripts/start_novnc.sh
@@ -91,8 +107,10 @@ bash scripts/start_browser.sh
 uvicorn app.main:app --host 0.0.0.0 --port 10000
 ```
 
-Without a local display, the agent falls back to launching a headed browser via
-Browser Use, and the live preview will be unavailable.
+`scripts/start_browser.sh` uses `SELENIUMBASE_PYTHON`; in the Docker image it
+automatically finds `/opt/seleniumbase-venv/bin/python`. Without a local
+display, the agent falls back to launching a headed browser via Browser Use,
+and the live preview will be unavailable.
 
 ## 5. Docker usage
 
@@ -120,10 +138,13 @@ docker run --rm -p 10000:10000 \
   ai-browser-agent
 ```
 
-The container starts, in order: Xvfb, XFCE, x11vnc, websockify/noVNC, Chromium
-(headed, CDP on 9222), then uvicorn on `$PORT`. Only port `10000` needs to be
-published - VNC (5900) and websockify (6080) are bound to localhost, and the
-noVNC WebSocket is proxied through FastAPI after authentication.
+The container starts, in order: Xvfb, XFCE, x11vnc, websockify/noVNC, then
+Chromium launched by SeleniumBase Pure CDP Mode (headed, dynamic debug port
+published to `CDP_URL_FILE`), then uvicorn on `$PORT`. Only port `10000` needs
+to be published - VNC (5900) and websockify (6080) are bound to localhost, and
+the noVNC WebSocket is proxied through FastAPI after authentication. The image
+keeps SeleniumBase in `/opt/seleniumbase-venv` so its dependency pins cannot
+conflict with Browser Use.
 
 ## 6. Configuring DeepSeek
 
@@ -191,7 +212,7 @@ reports `task_stopped`. Only one task can run at a time; a second request gets
 
 | Symptom | Fix |
 | --- | --- |
-| Browser badge stays red | `curl 127.0.0.1:9222/json/version` inside the container; check `/tmp/chromium.log`. |
+| Browser badge stays red | `cat /tmp/cdp_url` then `curl "$(cat /tmp/cdp_url)/json/version"` inside the container; check `/tmp/chromium.log`. |
 | noVNC panel empty | Check `/tmp/x11vnc.log` and `/tmp/websockify.log`; ensure port 6080 is up. |
 | Browser crashes / OOM | Increase the Render plan (2 GB+ recommended) or lower `SCREEN_WIDTH`/`SCREEN_HEIGHT`. |
 | XFCE does not start | Ensure `dbus-x11` is installed and `HOME` is writable by the runtime user. |

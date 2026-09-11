@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     screen_height: int = 1080
     browser_headless: bool = False
     cdp_url: str = "http://127.0.0.1:9222"
+    cdp_url_file: str = "/tmp/cdp_url"
     chrome_bin: str = ""
     browser_profile_dir: str = "browser_profile"
     downloads_dir: str = "downloads"

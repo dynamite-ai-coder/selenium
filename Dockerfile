@@ -48,6 +48,13 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir -r requirements.txt
 
+# SeleniumBase drives the visible Chromium in Pure CDP Mode. Its latest
+# dependency pins (typing-extensions, requests, rich, ...) conflict with
+# Browser Use, so it lives in a separate, isolated virtual environment.
+RUN python -m venv /opt/seleniumbase-venv \
+ && /opt/seleniumbase-venv/bin/pip install --no-cache-dir --upgrade pip \
+ && /opt/seleniumbase-venv/bin/pip install --no-cache-dir seleniumbase==4.54.1
+
 COPY . .
 
 # Runtime as a non-root user. The directories that hold mutable state are
