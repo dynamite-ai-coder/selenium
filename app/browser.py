@@ -20,11 +20,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 from browser_use import BrowserProfile, BrowserSession
+from browser_use.browser.profile import ProxySettings
 
 from app.config import settings
+from app.cloudflare_bypass import CloudflareBypass
 from app.utils import safe_error_message
 
 logger = logging.getLogger("browser_agent.browser")
@@ -50,6 +53,27 @@ def runtime_cdp_url() -> str:
     return settings.cdp_url.rstrip("/")
 
 
+def _proxy_settings() -> ProxySettings | None:
+    """Build Browser Use proxy settings from ``BROWSER_PROXY``.
+
+    Accepts "host:port", "user:pass@host:port" or a full URL with a scheme.
+    Only used for the local-launch fallback: when attaching to the
+    SeleniumBase browser over CDP, the proxy is already set at launch time.
+    """
+    raw = settings.browser_proxy.strip()
+    if not raw:
+        return None
+    candidate = raw if "://" in raw else f"http://{raw}"
+    parts = urlsplit(candidate)
+    if not parts.hostname or not parts.port:
+        logger.warning("Ignoring invalid BROWSER_PROXY value")
+        return None
+    server = f"{parts.scheme}://{parts.hostname}:{parts.port}"
+    username = parts.username or None
+    password = parts.password or None
+    return ProxySettings(server=server, username=username, password=password)
+
+
 def _profile(**overrides) -> BrowserProfile:
     data: dict = dict(
         headless=False,
@@ -58,6 +82,7 @@ def _profile(**overrides) -> BrowserProfile:
         downloads_path=str(settings.downloads_path),
         accept_downloads=True,
         chromium_sandbox=False,
+        proxy=_proxy_settings(),
         window_size={"width": settings.screen_width, "height": settings.screen_height},
         minimum_wait_page_load_time=0.5,
         wait_for_network_idle_page_load_time=1.0,
@@ -185,6 +210,24 @@ class BrowserManager:
             await session.kill()
         except Exception as exc:  # pragma: no cover
             logger.debug("Error while closing browser session: %s", safe_error_message(exc))
+
+    # -- cloudflare bypass --------------------------------------------------
+    async def bypass_cloudflare(self, url: str) -> dict:
+        """Attempt Cloudflare Turnstile bypass on a URL.
+
+        Returns bypass result dict with success, cookies, cf_clearance.
+        Only runs if CF_BYPASS_ENABLED=true in config.
+        """
+        if not settings.cf_bypass_enabled:
+            return {"success": False, "error": "CF bypass disabled"}
+
+        bypass = CloudflareBypass(
+            proxy=settings.browser_proxy or None,
+            timeout=settings.cf_bypass_timeout,
+            reconnect_time=settings.cf_bypass_reconnect_time,
+            incognito=settings.cf_bypass_incognito,
+        )
+        return await bypass.solve(url)
 
     # -- monitor -----------------------------------------------------------
     def start_monitor(self, interval: float = 8.0) -> None:
