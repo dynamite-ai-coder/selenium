@@ -463,6 +463,16 @@ class CloudflareBypass:
                   const q = (s) => { try { return document.querySelectorAll(s).length; }
                                      catch (e) { return -1; } };
                   const token = document.querySelector('input[name*="turnstile-response"]');
+                  const body = (document.body ? document.body.innerText : '');
+                  const lower = body.toLowerCase();
+                  const markers = ['captcha', 'falsch', 'fehler', 'ungültig', 'ungueltig',
+                                   'invalid', 'błąd', 'nieprawidł', 'incorrect', 'expired',
+                                   'abgelaufen', 'error'];
+                  let error = '';
+                  for (const m of markers) {
+                    const i = lower.indexOf(m);
+                    if (i >= 0) { error = body.slice(Math.max(0, i - 100), i + 160); break; }
+                  }
                   return {
                     url: location.href,
                     title: document.title,
@@ -470,12 +480,13 @@ class CloudflareBypass:
                     widget: q('.cf-turnstile, [data-sitekey]'),
                     token_len: token ? (token.value || '').length : -1,
                     api: typeof window.turnstile,
-                    body: (document.body ? document.body.innerText : '').slice(0, 120),
+                    body: body.slice(0, 260),
+                    error: error.replace(/\\s+/g, ' '),
                   };
                 }
                 """
             )
-            logger.info("Stealth page: %s", json.dumps(info, ensure_ascii=False)[:420])
+            logger.info("Stealth page: %s", json.dumps(info, ensure_ascii=False)[:600])
         except Exception as exc:
             logger.info("Stealth page probe failed: %s", safe_error_message(exc))
 
