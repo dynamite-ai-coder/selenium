@@ -46,19 +46,34 @@ TITLE_MARKERS = (
     "attention required",
     "checking your browser",
     "verify you are human",
+    "verifying you are human",
+    "checking if the site connection is secure",
     "cf-challenge",
     "enable javascript and cookies",
 )
 BODY_MARKERS = (
     "checking your browser",
     "verify you are human",
+    "verifying you are human",
+    "checking if the site connection is secure",
     "just a moment",
     "enable javascript and cookies to continue",
     "needs to review the security of your connection",
+    "cdn-cgi/challenge-platform",
+    "challenge-platform/h/b",
 )
 TURNSTILE_FRAME_SELECTORS = (
     'iframe[src*="challenges.cloudflare.com"]',
     'iframe[src*="turnstile"]',
+    'iframe[title*="cloudflare" i]',
+)
+TURNSTILE_WIDGET_SELECTORS = (
+    ".cf-turnstile",
+    "#cf-turnstile",
+    "[data-sitekey]",
+    "[class*='turnstile' i]",
+    'iframe[src*="challenges.cloudflare.com"]',
+    'script[src*="challenges.cloudflare.com"]',
 )
 TURNSTILE_TOKEN_SELECTOR = (
     'input[name="cf-turnstile-response"], textarea[name="cf-turnstile-response"], '
@@ -74,6 +89,7 @@ CHALLENGE_JS = """
     const title = (document.title || '').toLowerCase();
     const titleMarkers = %s;
     if (titleMarkers.some((m) => title.includes(m))) return 'interstitial';
+    if ((location.href || '').includes('/cdn-cgi/')) return 'interstitial';
     if (document.querySelector(
       '#challenge-running, #challenge-stage, #cf-challenge-running, .challenge-running'
     )) return 'interstitial';
@@ -87,16 +103,25 @@ CHALLENGE_JS = """
     if (bodyMarkers.some((m) => body.includes(m))) return 'interstitial';
 
     const tokenNode = document.querySelector(%s);
-    const widget = document.querySelector(
-      '.cf-turnstile, [data-sitekey], iframe[src*="challenges.cloudflare.com"]'
-    );
-    if (widget && tokenNode && !((tokenNode.value || '').trim())) return 'turnstile';
+    const widgetSelectors = %s;
+    const widget = widgetSelectors.some((sel) => {
+      try { return !!document.querySelector(sel); } catch (e) { return false; }
+    });
+    // Invisible/interaction-only Turnstile widgets often do not create the
+    // hidden response input until the widget runs, so a present widget with
+    // no token input still counts as an unsolved challenge.
+    if (widget && (!tokenNode || !((tokenNode.value || '').trim()))) return 'turnstile';
     return '';
   } catch (e) {
     return '';
   }
 })()
-""" % (list(TITLE_MARKERS), list(BODY_MARKERS), json.dumps(TURNSTILE_TOKEN_SELECTOR))
+""" % (
+    list(TITLE_MARKERS),
+    list(BODY_MARKERS),
+    json.dumps(TURNSTILE_TOKEN_SELECTOR),
+    list(TURNSTILE_WIDGET_SELECTORS),
+)
 
 _SAME_SITE = {"strict": "Strict", "lax": "Lax", "none": "None"}
 
@@ -168,7 +193,8 @@ async def detect_challenge(session: Any) -> str | None:
         return None
     try:
         cdp_session = await session.get_or_create_cdp_session()
-    except Exception:
+    except Exception as exc:
+        logger.warning("Cloudflare detection could not open a CDP session: %s", safe_error_message(exc))
         return None
     try:
         result = await asyncio.wait_for(
@@ -182,10 +208,13 @@ async def detect_challenge(session: Any) -> str | None:
         logger.warning("Cloudflare detection timed out - the page may be unresponsive")
         return None
     except Exception as exc:
-        logger.debug("Cloudflare detection failed: %s", safe_error_message(exc))
+        logger.warning("Cloudflare detection failed: %s", safe_error_message(exc))
         return None
     kind = result.get("result", {}).get("value")
-    return kind if kind in ("interstitial", "turnstile") else None
+    if kind in ("interstitial", "turnstile"):
+        logger.info("Cloudflare challenge detected (%s)", kind)
+        return kind
+    return None
 
 
 class CloudflareBypass:
@@ -368,20 +397,21 @@ class CloudflareBypass:
             html = (page.content() or "").lower()
         except Exception:
             html = ""
-        return "cf_chl_opt" in html or "cf-browser-verification" in html
+        return (
+            "cf_chl_opt" in html
+            or "cf-browser-verification" in html
+            or "challenge-platform" in html
+        )
 
     @staticmethod
     def _has_turnstile(page: Any) -> bool:
-        for selector in TURNSTILE_FRAME_SELECTORS:
+        for selector in TURNSTILE_FRAME_SELECTORS + TURNSTILE_WIDGET_SELECTORS:
             try:
                 if page.query_selector(selector):
                     return True
             except Exception:
                 continue
-        try:
-            return bool(page.query_selector(".cf-turnstile, [data-sitekey]"))
-        except Exception:
-            return False
+        return False
 
     @staticmethod
     def _read_turnstile_token(page: Any) -> str | None:

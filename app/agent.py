@@ -216,8 +216,9 @@ class AgentRunner:
         finally:
             if self._agent is not None:
                 with contextlib.suppress(Exception):
-                    await self._agent.close()
+                    await asyncio.wait_for(self._agent.close(), timeout=20)
             self._agent = None
+            self._task = None
             self._task_id = None
             self._stop_requested = False
             logger.info("Task %s finished", task_id)
@@ -282,15 +283,17 @@ class AgentRunner:
         if session is None:
             return
         kind = await detect_challenge(session)
+        target_url = getattr(browser_state_summary, "url", "") or display_url
+        host = urlsplit(target_url).netloc.lower()
         if kind is None:
+            logger.debug("Cloudflare probe on %s: no challenge", target_url)
             return
+        logger.info("Cloudflare probe on %s: %s", target_url, kind)
         # A Turnstile widget is common on forms; only act when the agent has
         # just interacted with the page (usually the submit that triggered it).
         if kind == "turnstile" and not _step_interacted(agent_output):
             return
 
-        target_url = getattr(browser_state_summary, "url", "") or display_url
-        host = urlsplit(target_url).netloc.lower()
         now = time.time()
         last = self._bypass_attempts.get(host, 0.0)
         if now - last < settings.cf_bypass_cooldown:
@@ -303,7 +306,16 @@ class AgentRunner:
             message = "Cloudflare challenge detected. Solving in a stealth browser..."
         await emit("agent_action", message, step=step_number, url=display_url, title=title)
 
-        result = await browser_manager.bypass_cloudflare(target_url)
+        try:
+            result = await asyncio.wait_for(
+                browser_manager.bypass_cloudflare(target_url),
+                timeout=settings.cf_bypass_timeout + 60,
+            )
+        except asyncio.TimeoutError:
+            result = {
+                "success": False,
+                "error": f"bypass timed out after {settings.cf_bypass_timeout + 60:.0f}s",
+            }
         if result.get("success") and result.get("applied"):
             logger.info("Cloudflare bypass applied for %s (mode=%s)", host, result.get("mode"))
             if result.get("mode") == "turnstile_token":
