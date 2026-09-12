@@ -362,12 +362,15 @@ class CloudflareBypass:
                             return self._success(context, page, result)
 
                         if login_submitted_at:
-                            # Challenge still running after the submit: click an
-                            # interactive widget when one is rendered.
+                            # Challenge still running after the submit: ask the
+                            # widget to run and click an interactive one when
+                            # rendered.
                             now = time.monotonic()
-                            if self.click_turnstile and (now - clicked_at) >= 4.0:
-                                if self._click_turnstile(page):
-                                    clicked_at = now
+                            if (now - clicked_at) >= 4.0:
+                                clicked_at = now
+                                self._trigger_turnstile(page, repeat=False)
+                                if self.click_turnstile:
+                                    self._click_turnstile(page)
                         elif not self.login:
                             if not armed:
                                 self._arm_submit_capture(page)
@@ -773,15 +776,26 @@ class CloudflareBypass:
                 """
                 () => {
                   const api = window.turnstile;
-                  if (api && typeof api.execute === 'function') {
-                    const widgets = document.querySelectorAll('.cf-turnstile, [data-sitekey]');
-                    let calls = 0;
-                    for (const widget of widgets) {
-                      try { api.execute(widget); calls += 1; } catch (e) {}
+                  if (!api || typeof api.execute !== 'function') return '';
+                  const targets = [...document.querySelectorAll(
+                    '.cf-turnstile, [data-sitekey], [id*="turnstile" i], [class*="turnstile" i]'
+                  )];
+                  for (const frame of document.querySelectorAll(
+                    'iframe[src*="challenges.cloudflare.com"], iframe[title*="cloudflare" i]'
+                  )) {
+                    if (frame.parentElement && !targets.includes(frame.parentElement)) {
+                      targets.push(frame.parentElement);
                     }
-                    if (calls) return 'api';
                   }
-                  return '';
+                  let calls = 0;
+                  if (targets.length === 0) {
+                    try { api.execute(); calls += 1; } catch (e) {}
+                  }
+                  for (const widget of targets) {
+                    try { api.execute(widget); calls += 1; } catch (e) {}
+                    try { api.execute(widget.id); calls += 1; } catch (e) {}
+                  }
+                  return calls ? 'api' : '';
                 }
                 """
             )
