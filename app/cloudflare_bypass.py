@@ -326,6 +326,17 @@ class CloudflareBypass:
 
                         if self._turnstile_solved(page):
                             if login_submitted_at:
+                                # Give the login XHR time to set the session
+                                # cookie and navigate before transplanting.
+                                settle_deadline = time.monotonic() + 20
+                                while time.monotonic() < settle_deadline:
+                                    if self._login_moved_on(page, url):
+                                        break
+                                    try:
+                                        page.wait_for_load_state("networkidle", timeout=3000)
+                                    except Exception:
+                                        pass
+                                    time.sleep(1.0)
                                 result["mode"] = "login"
                                 result["note"] = (
                                     "Login submitted with a fresh Turnstile token; "
@@ -336,7 +347,14 @@ class CloudflareBypass:
                             result["mode"] = "turnstile_token"
                             return self._success(context, page, result)
 
-                        if not self.login:
+                        if login_submitted_at:
+                            # Challenge still running after the submit: click an
+                            # interactive widget when one is rendered.
+                            now = time.monotonic()
+                            if self.click_turnstile and (now - clicked_at) >= 4.0:
+                                if self._click_turnstile(page):
+                                    clicked_at = now
+                        elif not self.login:
                             if not armed:
                                 self._arm_submit_capture(page)
                                 self._trigger_turnstile(page)
@@ -450,53 +468,51 @@ class CloudflareBypass:
         r"log\s*in|sign\s*in|logowanie|zaloguj|einloggen|anmelden|connexion|iniciar|"
         r"submit|continue|verify"
     )
+    _PASSWORD_OPTION_RE = (
+        r"hasł|haslo|password|passwort|mot de passe|contrase|senha|wachtwoord|"
+        r"heslo|jelsz|пароль"
+    )
     _SOCIAL_BUTTON_RE = (
         r"with\s+(x|twitter|google|facebook|apple|steam|discord|paypal|microsoft)|"
-        r"continue with|sign in with|sign up with|social"
+        r"continue with|sign in with|sign up with|social|magic\s*link|zdo[b]?ąd[zź]"
     )
 
-    def _submit_login(self, page: Any) -> bool:
-        """Fill the real credentials and click the login control.
-
-        The stealth browser then runs the site's own Turnstile flow with a
-        genuine click - more reliable than calling ``turnstile.execute`` on a
-        managed widget - and the resulting session cookies are transplanted.
-        Social login buttons ("Sign in with X") are skipped: they are not the
-        e-mail form whose credentials we hold.
-        """
+    @staticmethod
+    def _fill_field(page: Any, selectors: list[str], value: str) -> bool:
         try:
-            filled = page.evaluate(
-                """
-                (creds) => {
-                  const set = (el, value) => {
-                    const proto = el.tagName === 'TEXTAREA'
-                      ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-                    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-                    if (setter) setter.call(el, value); else el.value = value;
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                  };
-                  const email = document.querySelector(
-                    'input[type=email], input[name*=user i], input[name*=email i], input[name*=login i]'
-                  );
-                  const password = document.querySelector('input[type=password]');
-                  let n = 0;
-                  if (email) { set(email, creds.email || ''); n += 1; }
-                  if (password) { set(password, creds.password || ''); n += 1; }
-                  return n;
-                }
-                """,
-                self.login,
+            return bool(
+                page.evaluate(
+                    """
+                    ([selectors, value]) => {
+                      const el = selectors
+                        .map((sel) => { try { return document.querySelector(sel); } catch (e) { return null; } })
+                        .find(Boolean);
+                      if (!el) return false;
+                      const proto = el.tagName === 'TEXTAREA'
+                        ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+                      const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+                      if (setter) setter.call(el, value); else el.value = value;
+                      el.dispatchEvent(new Event('input', { bubbles: true }));
+                      el.dispatchEvent(new Event('change', { bubbles: true }));
+                      el.focus();
+                      return true;
+                    }
+                    """,
+                    [selectors, value],
+                )
             )
         except Exception as exc:
-            logger.debug("Could not fill the stealth login form: %s", safe_error_message(exc))
-            filled = 0
-        if not filled or int(filled) < 2:
+            logger.debug("Could not fill the stealth login field: %s", safe_error_message(exc))
             return False
 
-        def _label(control: Any) -> str:
+    def _click_label(self, page: Any, pattern: str, *, exclude: str | None = None) -> bool:
+        try:
+            controls = page.query_selector_all("button, input[type=submit], a[role=button]")
+        except Exception:
+            controls = []
+        for control in controls:
             try:
-                return " ".join(
+                label = " ".join(
                     filter(
                         None,
                         [
@@ -507,41 +523,75 @@ class CloudflareBypass:
                     )
                 ).strip()
             except Exception:
-                return ""
+                label = ""
+            if not label:
+                continue
+            if exclude and re.search(exclude, label, re.IGNORECASE):
+                continue
+            if re.search(pattern, label, re.IGNORECASE):
+                try:
+                    control.scroll_into_view_if_needed(timeout=2000)
+                    control.click(timeout=5000)
+                    logger.info("Stealth login: clicked %r", label[:60])
+                    return True
+                except Exception as exc:
+                    logger.debug("Stealth login click failed: %s", safe_error_message(exc))
+        return False
 
-        def _click(control: Any) -> bool:
-            if not control:
-                return False
-            if re.search(self._SOCIAL_BUTTON_RE, _label(control), re.IGNORECASE):
+    def _submit_login(self, page: Any) -> bool:
+        """Replay the real login in the stealth browser.
+
+        eneba-style forms are two-step: the password field only exists after
+        clicking "Log in with password" with the e-mail already typed. The
+        stealth browser therefore fills the e-mail, reveals the password field
+        when needed, fills it and clicks the final login control, so the site's
+        own Turnstile flow runs with a genuine click. Social login buttons and
+        the "magic link" option are skipped.
+        """
+        if not self.login:
+            return False
+        email_selectors = [
+            'input[type="email"]',
+            'input[name="username"]',
+            'input[name*="email" i]',
+            'input[name*="login" i]',
+        ]
+        try:
+            page.wait_for_selector(
+                ', '.join(email_selectors), timeout=15000, state="attached"
+            )
+        except Exception:
+            logger.warning("Stealth login: no e-mail field on the page")
+            return False
+        if not self._fill_field(page, email_selectors, self.login.get("email", "")):
+            logger.warning("Stealth login: could not fill the e-mail field")
+            return False
+
+        if not page.query_selector('input[type="password"]'):
+            if not self._click_label(page, self._PASSWORD_OPTION_RE, exclude=self._SOCIAL_BUTTON_RE):
+                logger.warning("Stealth login: no 'log in with password' control found")
                 return False
             try:
-                control.scroll_into_view_if_needed(timeout=2000)
-                control.click(timeout=5000)
-                return True
-            except Exception as exc:
-                logger.debug("Login control click failed: %s", safe_error_message(exc))
+                page.wait_for_selector('input[type="password"]', timeout=15000, state="visible")
+            except Exception:
+                logger.warning("Stealth login: password field never appeared")
                 return False
 
-        # Prefer the submit control of the form that owns the password field.
-        try:
-            form = page.query_selector("form:has(input[type=password])")
-            if form:
-                for selector in ("button[type=submit]", "input[type=submit]", "button"):
-                    if _click(form.query_selector(selector)):
-                        return True
-        except Exception:
-            pass
+        if not self._fill_field(page, ['input[type="password"]'], self.login.get("password", "")):
+            logger.warning("Stealth login: could not fill the password field")
+            return False
 
-        # Fallback: scan every control for a login label, skipping social ones.
-        try:
-            controls = page.query_selector_all("button, input[type=submit], a[role=button]")
-        except Exception:
-            controls = []
-        for control in controls:
-            if re.search(self._LOGIN_BUTTON_RE, _label(control), re.IGNORECASE) and _click(control):
-                return True
-
-        # Last resort: submit the form directly / press Enter in the password box.
+        # Prefer an exact "log in" label; only then the broader regex (without
+        # the social and "with password" option labels).
+        if self._click_label(page, r"^\s*(zaloguj się|zaloguj|log ?in|login|sign ?in|einloggen|anmelden|connexion|iniciar sesión)\s*$"):
+            return True
+        if self._click_label(
+            page,
+            self._LOGIN_BUTTON_RE,
+            exclude=self._SOCIAL_BUTTON_RE + "|" + self._PASSWORD_OPTION_RE,
+        ):
+            return True
+        # Last resort: submit the password field's form / press Enter in it.
         try:
             submitted = page.evaluate(
                 """
@@ -555,6 +605,7 @@ class CloudflareBypass:
                 """
             )
             if submitted:
+                logger.info("Stealth login: submitted the form directly")
                 return True
         except Exception as exc:
             logger.debug("Fallback login submit failed: %s", safe_error_message(exc))
