@@ -29,6 +29,8 @@ services:
         value: "true"
       - key: BROWSER_HEADLESS
         value: "false"
+      - key: CF_BYPASS_HEADLESS
+        value: "false"
       - key: SCREEN_WIDTH
         value: "1600"
       - key: SCREEN_HEIGHT

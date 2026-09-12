@@ -97,7 +97,7 @@ app/cloudflare_bypass.py ────────────────► ┌
 | `BROWSER_GEOLOCATION` | *(empty)* | Geolocation reported by the browser: `lat,lon`, e.g. `52.2297,21.0122`. |
 | `CF_BYPASS_ENABLED` | `true` | Automatic Cloudflare handling via invisible_playwright. |
 | `CF_BYPASS_TIMEOUT` | `90` | Timeout for a single bypass attempt (seconds). |
-| `CF_BYPASS_HEADLESS` | `true` | Run the stealth browser headless (`false` shows it in noVNC). |
+| `CF_BYPASS_HEADLESS` | `false` | Run the stealth browser on the container display (`true` uses a hidden display). GUI mode is the default because Cloudflare scores a real headed session better, and the solve stays visible in noVNC. |
 | `CF_BYPASS_SEED` | `0` | `0` = random fingerprint per solve; fixed integer = reproducible. |
 | `CF_BYPASS_LOCALE` | `auto` | Stealth browser language (`auto` follows the proxy egress). |
 | `CF_BYPASS_PROFILE_DIR` | *(empty)* | Optional persistent stealth profile. |

@@ -80,9 +80,10 @@ class Settings(BaseSettings):
     # --- Cloudflare Bypass (invisible_playwright stealth Firefox) ------------
     cf_bypass_enabled: bool = True
     cf_bypass_timeout: float = 90.0
-    # The patched Firefox is undetected headless too; run it headed to watch
-    # the solve in the live noVNC preview instead.
-    cf_bypass_headless: bool = True
+    # The stealth Firefox is patched for both modes, but Cloudflare scores a
+    # real GUI session (Xvfb) better than a hidden display, so the default is
+    # headed on the container display and visible in the noVNC preview.
+    cf_bypass_headless: bool = False
     # 0 = random fingerprint per solve; any other value is reproducible.
     cf_bypass_seed: int = 0
     # "auto" derives the language from the egress IP (matches BROWSER_PROXY).
