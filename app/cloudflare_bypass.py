@@ -466,6 +466,8 @@ class CloudflareBypass:
                   const q = (s) => { try { return document.querySelectorAll(s).length; }
                                      catch (e) { return -1; } };
                   const token = document.querySelector('input[name*="turnstile-response"]');
+                  const emailInput = document.querySelector('input[type=email], input[name=username]');
+                  const passwordInput = document.querySelector('input[type=password]');
                   const body = (document.body ? document.body.innerText : '');
                   const lower = body.toLowerCase();
                   const markers = ['captcha', 'falsch', 'fehler', 'ungültig', 'ungueltig',
@@ -476,13 +478,18 @@ class CloudflareBypass:
                     const i = lower.indexOf(m);
                     if (i >= 0) { error = body.slice(Math.max(0, i - 100), i + 160); break; }
                   }
-                  return {
+                    return {
                     url: location.href,
                     title: document.title,
                     iframe: q('iframe[src*="challenges.cloudflare.com"]'),
                     widget: q('.cf-turnstile, [data-sitekey]'),
                     token_len: token ? (token.value || '').length : -1,
                     api: typeof window.turnstile,
+                    exec: (window.turnstile && typeof window.turnstile.execute) || 'n/a',
+                    response: (window.turnstile && typeof window.turnstile.getResponse === 'function')
+                      ? (window.turnstile.getResponse() || '').length : -2,
+                    email_len: emailInput ? (emailInput.value || '').length : -1,
+                    pw_len: passwordInput ? (passwordInput.value || '').length : -1,
                     body: body.slice(0, 260),
                     error: error.replace(/\\s+/g, ' '),
                   };
@@ -788,21 +795,23 @@ class CloudflareBypass:
                     }
                   }
                   let calls = 0;
+                  let firstError = '';
                   if (targets.length === 0) {
-                    try { api.execute(); calls += 1; } catch (e) {}
+                    try { api.execute(); calls += 1; } catch (e) { firstError = String(e); }
                   }
                   for (const widget of targets) {
-                    try { api.execute(widget); calls += 1; } catch (e) {}
-                    try { api.execute(widget.id); calls += 1; } catch (e) {}
+                    try { api.execute(widget); calls += 1; } catch (e) { firstError = firstError || String(e); }
+                    try { api.execute(widget.id); calls += 1; } catch (e) { firstError = firstError || String(e); }
                   }
-                  return calls ? 'api' : '';
+                  return calls ? ('api:' + calls) : ('none:' + targets.length + ':' + firstError.slice(0, 80));
                 }
                 """
             )
-            if triggered == "api":
+            logger.info("Stealth turnstile execute: %s", triggered)
+            if isinstance(triggered, str) and triggered.startswith("api"):
                 return
         except Exception as exc:
-            logger.debug("turnstile.execute failed: %s", safe_error_message(exc))
+            logger.info("turnstile.execute failed: %s", safe_error_message(exc))
 
         if not repeat:
             return
@@ -839,29 +848,41 @@ class CloudflareBypass:
 
     def _click_turnstile(self, page: Any) -> bool:
         """Click the Turnstile checkbox (bounding box first, frame fallback)."""
-        try:
-            element = page.query_selector(TURNSTILE_FRAME_SELECTORS[0])
+        for selector in TURNSTILE_FRAME_SELECTORS:
+            try:
+                element = page.query_selector(selector)
+            except Exception:
+                element = None
             if element is None:
-                element = page.query_selector(TURNSTILE_FRAME_SELECTORS[1])
-            if element is not None:
+                continue
+            try:
                 element.scroll_into_view_if_needed(timeout=2000)
                 box = element.bounding_box()
-                if box and box.get("width", 0) > 0 and box.get("height", 0) > 0:
-                    x = box["x"] + min(34.0, box["width"] / 2.0)
-                    y = box["y"] + box["height"] / 2.0
-                    page.mouse.move(x, y)
-                    page.mouse.click(x, y)
-                    logger.info("Clicked Turnstile checkbox at (%.0f, %.0f)", x, y)
-                    return True
-        except Exception as exc:
-            logger.debug("Turnstile bounding-box click failed: %s", safe_error_message(exc))
+            except Exception as exc:
+                logger.debug("Turnstile bounding box failed: %s", safe_error_message(exc))
+                box = None
+            if not box or box.get("width", 0) <= 0 or box.get("height", 0) <= 0:
+                continue
+            # The checkbox sits at the left edge, vertically centered. Move the
+            # pointer before clicking so the humanised path runs.
+            x = box["x"] + min(max(22.0, box["width"] * 0.08), 40.0)
+            y = box["y"] + box["height"] / 2.0
+            try:
+                page.mouse.move(max(0.0, x - 25.0), max(0.0, y - 15.0))
+                page.mouse.move(x, y)
+                page.mouse.click(x, y)
+                logger.info("Clicked Turnstile checkbox at (%.0f, %.0f)", x, y)
+                return True
+            except Exception as exc:
+                logger.debug("Turnstile bounding-box click failed: %s", safe_error_message(exc))
 
         for selector in TURNSTILE_FRAME_SELECTORS:
             try:
                 frame = page.frame_locator(selector)
-                frame.locator("#challenge-stage, input[type=checkbox], label, body").first.click(
-                    timeout=2000
-                )
+                locator = frame.locator("#challenge-stage, input[type=checkbox], label")
+                if locator.count() == 0:
+                    locator = frame.locator("body")
+                locator.first.click(position={"x": 30, "y": 30}, timeout=2000)
                 logger.info("Clicked Turnstile widget through frame locator")
                 return True
             except Exception:
