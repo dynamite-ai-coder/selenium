@@ -171,10 +171,16 @@ async def detect_challenge(session: Any) -> str | None:
     except Exception:
         return None
     try:
-        result = await cdp_session.cdp_client.send.Runtime.evaluate(
-            params={"expression": CHALLENGE_JS, "returnByValue": True},
-            session_id=cdp_session.session_id,
+        result = await asyncio.wait_for(
+            cdp_session.cdp_client.send.Runtime.evaluate(
+                params={"expression": CHALLENGE_JS, "returnByValue": True},
+                session_id=cdp_session.session_id,
+            ),
+            timeout=6.0,
         )
+    except asyncio.TimeoutError:
+        logger.warning("Cloudflare detection timed out - the page may be unresponsive")
+        return None
     except Exception as exc:
         logger.debug("Cloudflare detection failed: %s", safe_error_message(exc))
         return None

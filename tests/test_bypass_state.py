@@ -166,7 +166,7 @@ class FakeSend:
         class Runtime:
             async def evaluate(self, params, session_id=None):
                 outer.calls.append(("evaluate", "turnstile" if "turnstile" in params["expression"] else "other"))
-                return {"result": {"value": True}}
+                return {"result": {"value": {"injected": True, "submitted": True}}}
 
         self.Emulation = Emulation()
         self.Storage = Storage()
@@ -205,17 +205,19 @@ COOKIES = [
 def test_apply_bypass_state_injects_token_without_reload():
     manager = BrowserManager()
     manager._session = FakeBrowserSession()
-    asyncio.run(
-        manager.apply_bypass_state(
-            {"user_agent": "Mozilla/5.0 Firefox/151.0", "cookies": COOKIES, "turnstile_token": "T"}
-        )
-    )
+    result = {
+        "user_agent": "Mozilla/5.0 Firefox/151.0",
+        "cookies": COOKIES,
+        "turnstile_token": "T",
+    }
+    asyncio.run(manager.apply_bypass_state(result))
     calls = manager._session.cdp.cdp_client.send.calls
     assert ("ua", "Mozilla/5.0 Firefox/151.0") in calls
     assert ("cookies", 1) in calls
     assert any(name == "evaluate" and kind == "turnstile" for name, kind in calls)
     assert all(name != "reload" for name, _ in calls)
     assert manager._cf_user_agent == "Mozilla/5.0 Firefox/151.0"
+    assert result["turnstile_submitted"] is True
 
 
 def test_apply_bypass_state_reloads_for_interstitial():

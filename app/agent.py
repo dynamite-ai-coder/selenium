@@ -307,7 +307,10 @@ class AgentRunner:
         if result.get("success") and result.get("applied"):
             logger.info("Cloudflare bypass applied for %s (mode=%s)", host, result.get("mode"))
             if result.get("mode") == "turnstile_token":
-                message = "Turnstile solved and injected. Retry the action..."
+                if result.get("turnstile_submitted"):
+                    message = "Turnstile solved and login resubmitted. Watching the response..."
+                else:
+                    message = "Turnstile solved and injected. Retry the action..."
             else:
                 message = "Cloudflare bypassed. Continuing..."
             await emit("agent_action", message, step=step_number, url=display_url, title=title)

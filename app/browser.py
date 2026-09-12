@@ -286,7 +286,9 @@ class BrowserManager:
             )
         injected = False
         if token:
-            injected = await self._inject_turnstile_token(cdp_session, token)
+            injection = await self._inject_turnstile_token(cdp_session, token)
+            injected = bool(injection.get("injected"))
+            result["turnstile_submitted"] = bool(injection.get("submitted"))
             if not injected:
                 result["apply_error"] = (
                     "No cf-turnstile-response field found on the page; retry the login"
@@ -298,19 +300,22 @@ class BrowserManager:
             )
         logger.info(
             "Cloudflare state applied to the visible browser "
-            "(%d cookies, ua=%s, turnstile_token=%s)",
+            "(%d cookies, ua=%s, turnstile_token=%s, resubmitted=%s)",
             len(cookies),
             "yes" if user_agent else "unchanged",
             "injected" if injected else "none",
+            result.get("turnstile_submitted", False),
         )
 
     @staticmethod
-    async def _inject_turnstile_token(cdp_session: Any, token: str) -> bool:
-        """Set the Turnstile response field on the focused page.
+    async def _inject_turnstile_token(cdp_session: Any, token: str) -> dict:
+        """Set the Turnstile response field and retry the form submission.
 
         Uses the native value setter plus input/change events so frameworks
-        (React, Vue, ...) pick the value up as if the widget had solved.
-        Returns True when at least one field was updated.
+        (React, Vue, ...) pick the value up as if the widget had solved, then
+        clicks the page's login/submit control again so the user gets the
+        site's verdict without waiting for another agent step. Returns
+        ``{"injected": bool, "submitted": bool}``.
         """
         expression = """
         (() => {
@@ -332,14 +337,25 @@ class BrowserManager:
               updated += 1;
             } catch (e) {}
           }
-          return updated > 0;
+          let submitted = false;
+          if (updated > 0) {
+            const controls = [...document.querySelectorAll('button, input[type=submit]')];
+            const control = controls.find((el) =>
+              /log.?in|sign.?in|continue|submit|verify/i.test((el.innerText || el.value || '').trim())
+            ) || controls.find((el) => el.type === 'submit');
+            if (control) {
+              try { control.click(); submitted = true; } catch (e) {}
+            }
+          }
+          return { injected: updated > 0, submitted };
         })()
         """ % json.dumps(token)
         result = await cdp_session.cdp_client.send.Runtime.evaluate(
             params={"expression": expression, "returnByValue": True},
             session_id=cdp_session.session_id,
         )
-        return bool(result.get("result", {}).get("value"))
+        value = result.get("result", {}).get("value") or {}
+        return {"injected": bool(value.get("injected")), "submitted": bool(value.get("submitted"))}
 
     async def _restore_bypass_state(self, session: BrowserSession) -> None:
         """Re-apply the remembered bypass User-Agent after a reconnect."""
