@@ -236,7 +236,7 @@ class AgentRunner:
             await emit("task_completed", result or "Task completed.", task_id=task_id, steps=steps)
             logger.info("Task %s completed in %d steps", task_id, steps)
         else:
-            message = result or self._last_login_error or "The agent could not complete the task."
+            message = self._last_login_error or result or "The agent could not complete the task."
             await emit("task_failed", message, task_id=task_id, steps=steps)
             logger.warning("Task %s did not complete successfully", task_id)
 
