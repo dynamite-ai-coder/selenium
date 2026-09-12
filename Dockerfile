@@ -98,9 +98,10 @@ COPY . .
 # Runtime as a non-root user. The directories that hold mutable state are
 # created up front and owned by that user.
 RUN useradd --create-home --shell /bin/bash --uid 1000 agent \
- && mkdir -p /app/browser_profile /app/uploads /app/downloads /app/logs \
- && chmod +x /app/scripts/*.sh \
- && chown -R agent:agent /app
+  && mkdir -p /app/browser_profile /app/uploads /app/downloads /app/logs \
+  && chmod +x /app/scripts/*.sh \
+  && chown -R agent:agent /app \
+  && chown -R agent:agent /opt/invisible-playwright
 
 USER agent
 ENV HOME=/home/agent
