@@ -152,6 +152,13 @@ def test_turnstile_helpers():
     assert CloudflareBypass._read_turnstile_token(solved) == "0.abc-token"
 
 
+def test_site_error_detection():
+    rejected = FakePage(body="Einloggen Ungültige Zugangsdaten angegeben Einloggen")
+    assert CloudflareBypass._site_error(rejected) is not None
+    assert "zugangsdaten" in CloudflareBypass._site_error(rejected).lower()
+    assert CloudflareBypass._site_error(FakePage(body="Everything is fine")) is None
+
+
 def test_click_turnstile_uses_bounding_box():
     class FakeElement:
         def scroll_into_view_if_needed(self, timeout=None):

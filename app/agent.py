@@ -326,6 +326,20 @@ class AgentRunner:
                 title=title,
             )
         else:
+            if result.get("mode") == "login_error":
+                # The site answered with its own verdict; retrying the same
+                # credentials will not change it, so stop for this task.
+                self._bypass_attempts[host] = time.time() + 86_400
+                message = result.get("site_error") or result.get("error") or "login rejected"
+                logger.warning("Login rejected for %s: %s", host, message)
+                await emit(
+                    "agent_action",
+                    f"Login failed: {message}",
+                    step=step_number,
+                    url=display_url,
+                    title=title,
+                )
+                return
             message = result.get("error") or "unknown error"
             logger.warning("Cloudflare bypass failed for %s: %s", host, message)
             await emit(

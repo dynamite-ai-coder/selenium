@@ -83,6 +83,18 @@ TURNSTILE_TOKEN_SELECTOR = (
     'input[name="cf-turnstile-response"], textarea[name="cf-turnstile-response"], '
     'input[name$="turnstile-response"]'
 )
+# Text the login server itself puts on the page when it rejects the attempt.
+SITE_ERROR_MARKERS = (
+    "ungültige zugangsdaten",
+    "invalid credentials",
+    "incorrect password",
+    "invalid email",
+    "falsches passwort",
+    "błędne dane",
+    "nieprawidłowe dane",
+    "credenciales",
+    "identifiants invalides",
+)
 
 # JavaScript evaluated in the agent's Chromium (through browser-use's CDP
 # session). Returns "interstitial", "turnstile" or "" so the runner can decide
@@ -348,6 +360,16 @@ class CloudflareBypass:
                             time.sleep(2.0)
                             continue
 
+                    if login_submitted_at:
+                        site_error = self._site_error(page)
+                        if site_error:
+                            self._collect(context, page, result)
+                            result["mode"] = "login_error"
+                            result["site_error"] = site_error[:200]
+                            result["error"] = f"login rejected by the site: {site_error[:160]}"
+                            logger.warning("Stealth login rejected: %s", site_error[:160])
+                            return result
+
                     if self._has_turnstile(page):
                         if self._turnstile_solved(page):
                             if login_submitted_at:
@@ -472,6 +494,23 @@ class CloudflareBypass:
                 pass
 
     # -- challenge helpers ---------------------------------------------------
+    @staticmethod
+    def _site_error(page: Any) -> str | None:
+        """Return the site's own error text when it rejected the login."""
+        try:
+            text = page.evaluate(
+                "() => (document.body ? document.body.innerText : '').slice(0, 4000)"
+            )
+        except Exception:
+            return None
+        low = (text or "").lower()
+        for marker in SITE_ERROR_MARKERS:
+            index = low.find(marker)
+            if index >= 0:
+                snippet = (text[max(0, index - 80) : index + 140]).strip()
+                return " ".join(snippet.split())
+        return None
+
     @staticmethod
     def _log_page_state(page: Any) -> None:
         """Throttled INFO probe of what the stealth browser currently sees."""
