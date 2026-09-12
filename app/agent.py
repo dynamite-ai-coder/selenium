@@ -74,19 +74,6 @@ def _safe_url(url: str | None) -> str:
     return ""
 
 
-def _step_interacted(agent_output: Any) -> bool:
-    """True when the step clicked/typed, i.e. a form submit may have run."""
-    try:
-        actions = getattr(agent_output, "action", None) or []
-        for action in actions:
-            data = action.model_dump(exclude_none=True) if hasattr(action, "model_dump") else {}
-            if any(name in data for name in ("click", "input", "send_keys", "select_dropdown")):
-                return True
-    except Exception:  # pragma: no cover - never break the agent step
-        pass
-    return False
-
-
 def _action_labels(agent_output: Any) -> list[str]:
     labels: list[str] = []
     try:
@@ -289,10 +276,6 @@ class AgentRunner:
             logger.debug("Cloudflare probe on %s: no challenge", target_url)
             return
         logger.info("Cloudflare probe on %s: %s", target_url, kind)
-        # A Turnstile widget is common on forms; only act when the agent has
-        # just interacted with the page (usually the submit that triggered it).
-        if kind == "turnstile" and not _step_interacted(agent_output):
-            return
 
         now = time.time()
         last = self._bypass_attempts.get(host, 0.0)

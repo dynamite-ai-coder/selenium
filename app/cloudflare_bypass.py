@@ -74,8 +74,11 @@ TURNSTILE_WIDGET_SELECTORS = (
     "[data-sitekey]",
     "[class*='turnstile' i]",
     'iframe[src*="challenges.cloudflare.com"]',
-    'script[src*="challenges.cloudflare.com"]',
 )
+# The api.js script is only a hint used by the stealth solver while it waits;
+# the agent-side probe must not treat it as a challenge (it is on every page
+# that merely renders an invisible widget).
+TURNSTILE_SCRIPT_SELECTOR = 'script[src*="challenges.cloudflare.com"]'
 TURNSTILE_TOKEN_SELECTOR = (
     'input[name="cf-turnstile-response"], textarea[name="cf-turnstile-response"], '
     'input[name$="turnstile-response"]'
@@ -104,14 +107,20 @@ CHALLENGE_JS = """
     if (bodyMarkers.some((m) => body.includes(m))) return 'interstitial';
 
     const tokenNode = document.querySelector(%s);
+    const tokenValue = tokenNode ? (tokenNode.value || '').trim() : null;
     const widgetSelectors = %s;
     const widget = widgetSelectors.some((sel) => {
       try { return !!document.querySelector(sel); } catch (e) { return false; }
     });
+    // An empty hidden response field means a challenge is pending, but only
+    // when the Turnstile API or a widget is actually present (some forms ship
+    // the input unconditionally).
+    if (tokenValue === '' &&
+        (typeof window.turnstile !== 'undefined' || widget)) return 'turnstile';
     // Invisible/interaction-only Turnstile widgets often do not create the
     // hidden response input until the widget runs, so a present widget with
     // no token input still counts as an unsolved challenge.
-    if (widget && (!tokenNode || !((tokenNode.value || '').trim()))) return 'turnstile';
+    if (widget && tokenValue === null) return 'turnstile';
     return '';
   } catch (e) {
     return '';
@@ -319,16 +328,16 @@ class CloudflareBypass:
                         time.sleep(1.0)
                         continue
 
-                    if self._has_turnstile(page):
-                        if self.login and not login_submitted_at:
-                            if self._submit_login(page):
-                                login_submitted_at = time.monotonic()
-                                logger.info(
-                                    "Submitted the real login form in the stealth browser"
-                                )
-                                time.sleep(2.0)
-                                continue
+                    if self.login and not login_submitted_at:
+                        if self._submit_login(page):
+                            login_submitted_at = time.monotonic()
+                            logger.info(
+                                "Submitted the real login form in the stealth browser"
+                            )
+                            time.sleep(2.0)
+                            continue
 
+                    if self._has_turnstile(page):
                         if self._turnstile_solved(page):
                             if login_submitted_at:
                                 # Give the login XHR time to set the session
@@ -366,6 +375,17 @@ class CloudflareBypass:
                                 armed = True
                             else:
                                 self._trigger_turnstile(page, repeat=False)
+                        time.sleep(1.0)
+                        continue
+
+                    if login_submitted_at:
+                        # No challenge left on this page: the login may have
+                        # completed and navigated - transplant right away.
+                        if self._login_moved_on(page, url):
+                            result["mode"] = "login"
+                            result["note"] = "Login completed in the stealth browser"
+                            logger.info("Login completed in the stealth browser")
+                            return self._success(context, page, result)
                         time.sleep(1.0)
                         continue
 
@@ -489,7 +509,11 @@ class CloudflareBypass:
 
     @staticmethod
     def _has_turnstile(page: Any) -> bool:
-        for selector in TURNSTILE_FRAME_SELECTORS + TURNSTILE_WIDGET_SELECTORS:
+        for selector in (
+            TURNSTILE_FRAME_SELECTORS
+            + TURNSTILE_WIDGET_SELECTORS
+            + (TURNSTILE_SCRIPT_SELECTOR,)
+        ):
             try:
                 if page.query_selector(selector):
                     return True
