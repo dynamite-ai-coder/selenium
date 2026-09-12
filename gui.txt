@@ -1,0 +1,54 @@
+Zaprojektuj kompletną szatę graficzną (UI/UX) dla aplikacji webowej o nazwie 
+"TERMINATOR" – zaawansowanego agenta AI sterującego prawdziwą przeglądarką 
+Chromium w czasie rzeczywistym, z podglądem live przez noVNC.
+
+KONTEKST PRODUKTU:
+- Aplikacja chatowa (styl ChatGPT) po lewej stronie
+- Podgląd żywej przeglądarki Chromium po prawej (noVNC)
+- Ciemny motyw, panel logowania, upload/download plików
+- WebSocket events: task_started, agent_action, task_completed, task_failed
+- Stack: FastAPI + DeepSeek LLM + Docker
+
+KIERUNEK ARTYSTYCZNY – "TERMINATOR":
+1. Estetyka cyberpunk / military-tech / sci-fi z lat 80-90 w nowoczesnym wydaniu
+2. Inspiracje: film "Terminator" (1984/1991), HUD z Predatora, interfejsy z 
+   "Matrix", "Blade Runner 2049", "Cyberpunk 2077", T-800 endoszkielet
+3. Paleta kolorów:
+   - Tło: głęboka czerń #0A0A0A, grafit #121212, stalowy #1A1D21
+   - Akcent główny: czerwony "Terminator Red" #FF1F1F / #E30613 (jak oko T-800)
+   - Akcent wtórny: cyjan/ice blue #00E5FF (skanowanie, dane)
+   - Ostrzeżenie: bursztyn #FFB000 (HUD, alerty)
+   - Tekst: #E8E8E8, przygaszony #8A8F98
+4. Efekty graficzne:
+   - Skanujące linie (CRT scanlines) na panelu podglądu przeglądarki
+   - Glow/neon na aktywnych elementach
+   - Siatka hex / grid w tle (targeting grid)
+   - Efekt "terminala" – monospace font dla logów
+   - Subtelny noise/grain filmowy
+   - Animowane "oko Terminatora" jako wskaźnik statusu agenta
+5. Typografia:
+   - Nagłówki: fonty techniczne/militarne (np. Rajdhani, Orbitron, Chakra Petch)
+   - Body: Inter / Roboto
+   - Kod/logi: JetBrains Mono / Fira Code
+6. Ikony i elementy:
+   - Logo: stylizowana czaszka T-800 / oko / czerwony celownik
+   - Przyciski jak przełączniki wojskowe
+   - Wskaźniki statusu jak LED-y w HUD
+   - Ramki jak w interfejsach wojskowych (narożne klamry)
+
+WYMAGANE EKRANY/WIDOKI:
+A) Ekran logowania – terminalowe wejście, "ACCESS TERMINAL", pole hasła
+B) Główny widok – split screen: chat (lewo) + live browser preview (prawo)
+C) Panel statusu agenta – pasek górny z "mission status"
+D) Lista plików upload/download – stylizowana jak "data logs"
+E) Popupy/alerty – styl "SYSTEM ALERT" / "TASK TERMINATED"
+
+DOSTARCZ:
+- Paleta kolorów (hex)
+- System typografii
+- Komponenty UI (przyciski, inputy, karty, modale)
+- 3-5 mockupów kluczowych ekranów
+- Wersja responsywna (desktop + tablet)
+- Style guide / design system
+
+FORMAT: Figma / Adobe XD, eksport do PNG + specyfikacja CSS variables
