@@ -479,10 +479,12 @@ class CloudflareBypass:
             html = (page.content() or "").lower()
         except Exception:
             html = ""
+        # "challenge-platform" alone appears on any page running the Turnstile
+        # api.js; only the orchestrate path marks a real interstitial.
         return (
             "cf_chl_opt" in html
             or "cf-browser-verification" in html
-            or "challenge-platform" in html
+            or "challenge-platform/h/b/orchestrate" in html
         )
 
     @staticmethod
@@ -601,7 +603,19 @@ class CloudflareBypass:
 
         if not page.query_selector('input[type="password"]'):
             if not self._click_label(page, self._PASSWORD_OPTION_RE, exclude=self._SOCIAL_BUTTON_RE):
-                logger.warning("Stealth login: no 'log in with password' control found")
+                try:
+                    labels = [
+                        (control.inner_text() or control.get_attribute("value") or "").strip()
+                        for control in page.query_selector_all(
+                            "button, input[type=submit], a[role=button]"
+                        )
+                    ]
+                except Exception:
+                    labels = []
+                logger.warning(
+                    "Stealth login: no 'log in with password' control found; buttons=%s",
+                    labels[:12],
+                )
                 return False
             try:
                 page.wait_for_selector('input[type="password"]', timeout=15000, state="visible")
