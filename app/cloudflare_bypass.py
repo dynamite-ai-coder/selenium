@@ -362,15 +362,20 @@ class CloudflareBypass:
                             return self._success(context, page, result)
 
                         if login_submitted_at:
-                            # Challenge still running after the submit: ask the
-                            # widget to run and click an interactive one when
-                            # rendered.
+                            # The site's own submit handler has already asked
+                            # Turnstile to run; calling execute() again would
+                            # restart the challenge, so wait passively and only
+                            # click a checkbox that is actually visible.
                             now = time.monotonic()
-                            if (now - clicked_at) >= 4.0:
-                                clicked_at = now
-                                self._trigger_turnstile(page, repeat=False)
-                                if self.click_turnstile:
-                                    self._click_turnstile(page)
+                            if self.click_turnstile and (now - clicked_at) >= 8.0:
+                                try:
+                                    if page.query_selector(
+                                        'iframe[src*="challenges.cloudflare.com"]'
+                                    ):
+                                        if self._click_turnstile(page):
+                                            clicked_at = now
+                                except Exception:
+                                    pass
                         elif not self.login:
                             if not armed:
                                 self._arm_submit_capture(page)
@@ -486,8 +491,12 @@ class CloudflareBypass:
                     token_len: token ? (token.value || '').length : -1,
                     api: typeof window.turnstile,
                     exec: (window.turnstile && typeof window.turnstile.execute) || 'n/a',
-                    response: (window.turnstile && typeof window.turnstile.getResponse === 'function')
-                      ? (window.turnstile.getResponse() || '').length : -2,
+                    response: (() => {
+                      try {
+                        return (window.turnstile && typeof window.turnstile.getResponse === 'function')
+                          ? (window.turnstile.getResponse() || '').length : -2;
+                      } catch (e) { return -3; }
+                    })(),
                     email_len: emailInput ? (emailInput.value || '').length : -1,
                     pw_len: passwordInput ? (passwordInput.value || '').length : -1,
                     body: body.slice(0, 260),
@@ -583,6 +592,41 @@ class CloudflareBypass:
             logger.debug("Could not fill the stealth login field: %s", safe_error_message(exc))
             return False
 
+    def _enter_text(self, page: Any, selectors: list[str], value: str) -> bool:
+        """Focus the field and type with real key events, like a human.
+
+        Cloudflare's behavioural signals score keystrokes, so JavaScript value
+        assignment alone is a weaker login than typing. Falls back to the
+        native setter if keyboard input is unavailable.
+        """
+        target = None
+        for selector in selectors:
+            try:
+                target = page.query_selector(selector)
+            except Exception:
+                target = None
+            if target is not None:
+                break
+        if target is None:
+            return False
+        try:
+            target.click(timeout=5000)
+        except Exception:
+            try:
+                target.evaluate("el => el.focus()")
+            except Exception:
+                pass
+        try:
+            target.fill("")
+        except Exception:
+            pass
+        try:
+            page.keyboard.type(value, delay=60)
+            return True
+        except Exception as exc:
+            logger.debug("Keyboard typing failed: %s", safe_error_message(exc))
+            return self._fill_field(page, selectors, value)
+
     def _click_label(self, page: Any, pattern: str, *, exclude: str | None = None) -> bool:
         try:
             controls = page.query_selector_all("button, input[type=submit], a[role=button]")
@@ -653,7 +697,7 @@ class CloudflareBypass:
         except Exception:
             logger.warning("Stealth login: no e-mail field on the page")
             return False
-        if not self._fill_field(page, email_selectors, self.login.get("email", "")):
+        if not self._enter_text(page, email_selectors, self.login.get("email", "")):
             logger.warning("Stealth login: could not fill the e-mail field")
             return False
 
@@ -679,7 +723,7 @@ class CloudflareBypass:
                 logger.warning("Stealth login: password field never appeared")
                 return False
 
-        if not self._fill_field(page, ['input[type="password"]'], self.login.get("password", "")):
+        if not self._enter_text(page, ['input[type="password"]'], self.login.get("password", "")):
             logger.warning("Stealth login: could not fill the password field")
             return False
 
