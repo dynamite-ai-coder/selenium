@@ -310,6 +310,17 @@ class CloudflareBypass:
                     wait_until="domcontentloaded",
                     timeout=min(120_000, int(self.timeout * 1000)),
                 )
+                # GUI sessions score better when the window is actually on
+                # screen and focused; headed mode opens it on the container
+                # display, this raises it above the agent's Chromium.
+                try:
+                    page.bring_to_front()
+                except Exception:
+                    pass
+                try:
+                    page.evaluate("() => { try { window.focus(); } catch (e) {} }")
+                except Exception:
+                    pass
 
                 clicked_at = 0.0
                 armed = False
@@ -499,6 +510,7 @@ class CloudflareBypass:
                     })(),
                     email_len: emailInput ? (emailInput.value || '').length : -1,
                     pw_len: passwordInput ? (passwordInput.value || '').length : -1,
+                    focus: (() => { try { return document.hasFocus(); } catch (e) { return null; } })(),
                     body: body.slice(0, 260),
                     error: error.replace(/\\s+/g, ' '),
                   };
@@ -684,6 +696,10 @@ class CloudflareBypass:
         if not self.login:
             return False
         logger.info("Stealth login: attempting with %s***", str(self.login.get("email", ""))[:3])
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
         email_selectors = [
             'input[type="email"]',
             'input[name="username"]',
