@@ -305,7 +305,12 @@ class CloudflareBypass:
                 clicked_at = 0.0
                 armed = False
                 login_submitted_at = 0.0
+                last_probe = 0.0
                 while time.monotonic() < deadline:
+                    now_probe = time.monotonic()
+                    if now_probe - last_probe >= 6.0:
+                        last_probe = now_probe
+                        self._log_page_state(page)
                     if self._is_interstitial(page):
                         now = time.monotonic()
                         if self.click_turnstile and (now - clicked_at) >= 4.0:
@@ -429,6 +434,32 @@ class CloudflareBypass:
 
     # -- challenge helpers ---------------------------------------------------
     @staticmethod
+    def _log_page_state(page: Any) -> None:
+        """Throttled INFO probe of what the stealth browser currently sees."""
+        try:
+            info = page.evaluate(
+                """
+                () => {
+                  const q = (s) => { try { return document.querySelectorAll(s).length; }
+                                     catch (e) { return -1; } };
+                  const token = document.querySelector('input[name*="turnstile-response"]');
+                  return {
+                    url: location.href,
+                    title: document.title,
+                    iframe: q('iframe[src*="challenges.cloudflare.com"]'),
+                    widget: q('.cf-turnstile, [data-sitekey]'),
+                    token_len: token ? (token.value || '').length : -1,
+                    api: typeof window.turnstile,
+                    body: (document.body ? document.body.innerText : '').slice(0, 120),
+                  };
+                }
+                """
+            )
+            logger.info("Stealth page: %s", json.dumps(info, ensure_ascii=False)[:420])
+        except Exception as exc:
+            logger.info("Stealth page probe failed: %s", safe_error_message(exc))
+
+    @staticmethod
     def _is_interstitial(page: Any) -> bool:
         try:
             title = (page.title() or "").lower()
@@ -550,6 +581,7 @@ class CloudflareBypass:
         """
         if not self.login:
             return False
+        logger.info("Stealth login: attempting with %s***", str(self.login.get("email", ""))[:3])
         email_selectors = [
             'input[type="email"]',
             'input[name="username"]',
@@ -760,6 +792,7 @@ class CloudflareBypass:
                 return True
             except Exception:
                 continue
+        logger.info("No clickable Turnstile frame found")
         return False
 
 
