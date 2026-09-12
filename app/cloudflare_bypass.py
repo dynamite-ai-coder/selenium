@@ -564,11 +564,22 @@ class CloudflareBypass:
             if re.search(pattern, label, re.IGNORECASE):
                 try:
                     control.scroll_into_view_if_needed(timeout=2000)
+                except Exception:
+                    pass
+                try:
                     control.click(timeout=5000)
                     logger.info("Stealth login: clicked %r", label[:60])
                     return True
                 except Exception as exc:
                     logger.debug("Stealth login click failed: %s", safe_error_message(exc))
+                    # Cookie banners and overlays can swallow a coordinate
+                    # click; a JS click dispatches straight to the element.
+                    try:
+                        control.evaluate("el => el.click()")
+                        logger.info("Stealth login: JS-clicked %r", label[:60])
+                        return True
+                    except Exception as exc2:
+                        logger.debug("Stealth login JS click failed: %s", safe_error_message(exc2))
         return False
 
     def _submit_login(self, page: Any) -> bool:
