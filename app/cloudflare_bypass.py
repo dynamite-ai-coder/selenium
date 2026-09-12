@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any, Dict, Iterable, Optional
 from urllib.parse import urlsplit
@@ -226,13 +227,14 @@ class CloudflareBypass:
     def __init__(
         self,
         proxy: Dict[str, str] | None = None,
-        headless: bool = True,
+        headless: bool = False,
         timeout: float = 90.0,
         seed: int | None = None,
         locale: str = "auto",
         timezone: str = "",
         profile_dir: str | None = None,
         click_turnstile: bool = True,
+        login: Dict[str, str] | None = None,
     ) -> None:
         self.proxy = proxy
         self.headless = headless
@@ -242,6 +244,11 @@ class CloudflareBypass:
         self.timezone = timezone or ""
         self.profile_dir = profile_dir
         self.click_turnstile = click_turnstile
+        # Credentials already typed into the agent's page. When present the
+        # stealth browser performs the real login (so the site's own Turnstile
+        # flow runs with a genuine click) and we transplant the session cookies,
+        # instead of trying to steal a single-use widget token.
+        self.login = login or None
         self.last_seed: int | None = seed
 
     async def solve(self, url: str) -> Dict[str, Any]:
@@ -297,6 +304,7 @@ class CloudflareBypass:
 
                 clicked_at = 0.0
                 armed = False
+                login_submitted_at = 0.0
                 while time.monotonic() < deadline:
                     if self._is_interstitial(page):
                         now = time.monotonic()
@@ -307,22 +315,45 @@ class CloudflareBypass:
                         continue
 
                     if self._has_turnstile(page):
+                        if self.login and not login_submitted_at:
+                            if self._submit_login(page):
+                                login_submitted_at = time.monotonic()
+                                logger.info(
+                                    "Submitted the real login form in the stealth browser"
+                                )
+                                time.sleep(2.0)
+                                continue
+
                         if self._turnstile_solved(page):
+                            if login_submitted_at:
+                                result["mode"] = "login"
+                                result["note"] = (
+                                    "Login submitted with a fresh Turnstile token; "
+                                    "transplanting session cookies"
+                                )
+                                return self._success(context, page, result)
                             result["turnstile_token"] = self._read_turnstile_token(page)
                             result["mode"] = "turnstile_token"
                             return self._success(context, page, result)
-                        if not armed:
-                            self._arm_submit_capture(page)
-                            self._trigger_turnstile(page)
-                            armed = True
-                        else:
-                            self._trigger_turnstile(page, repeat=False)
+
+                        if not self.login:
+                            if not armed:
+                                self._arm_submit_capture(page)
+                                self._trigger_turnstile(page)
+                                armed = True
+                            else:
+                                self._trigger_turnstile(page, repeat=False)
                         time.sleep(1.0)
                         continue
 
                     result["mode"] = "interstitial"
                     return self._success(context, page, result)
 
+                if login_submitted_at and self._login_moved_on(page, url):
+                    result["mode"] = "login"
+                    result["note"] = "Login submitted; cookies transplanted at timeout"
+                    logger.info("Login completed in the stealth browser")
+                    return self._success(context, page, result)
                 return self._timeout_result(context, page, result)
         except Exception as exc:
             result["error"] = safe_error_message(exc)
@@ -334,6 +365,8 @@ class CloudflareBypass:
         result["success"] = True
         if result["mode"] == "turnstile_token":
             logger.info("Captured a fresh Turnstile token for transplant")
+        elif result["mode"] == "login":
+            logger.info("Login completed in the stealth browser; transplanting session cookies")
         elif result["cf_clearance"]:
             logger.info("Cloudflare interstitial cleared; cf_clearance obtained")
         else:
@@ -412,6 +445,132 @@ class CloudflareBypass:
             except Exception:
                 continue
         return False
+
+    _LOGIN_BUTTON_RE = (
+        r"log\s*in|sign\s*in|logowanie|zaloguj|einloggen|anmelden|connexion|iniciar|"
+        r"submit|continue|verify"
+    )
+    _SOCIAL_BUTTON_RE = (
+        r"with\s+(x|twitter|google|facebook|apple|steam|discord|paypal|microsoft)|"
+        r"continue with|sign in with|sign up with|social"
+    )
+
+    def _submit_login(self, page: Any) -> bool:
+        """Fill the real credentials and click the login control.
+
+        The stealth browser then runs the site's own Turnstile flow with a
+        genuine click - more reliable than calling ``turnstile.execute`` on a
+        managed widget - and the resulting session cookies are transplanted.
+        Social login buttons ("Sign in with X") are skipped: they are not the
+        e-mail form whose credentials we hold.
+        """
+        try:
+            filled = page.evaluate(
+                """
+                (creds) => {
+                  const set = (el, value) => {
+                    const proto = el.tagName === 'TEXTAREA'
+                      ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+                    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+                    if (setter) setter.call(el, value); else el.value = value;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                  };
+                  const email = document.querySelector(
+                    'input[type=email], input[name*=user i], input[name*=email i], input[name*=login i]'
+                  );
+                  const password = document.querySelector('input[type=password]');
+                  let n = 0;
+                  if (email) { set(email, creds.email || ''); n += 1; }
+                  if (password) { set(password, creds.password || ''); n += 1; }
+                  return n;
+                }
+                """,
+                self.login,
+            )
+        except Exception as exc:
+            logger.debug("Could not fill the stealth login form: %s", safe_error_message(exc))
+            filled = 0
+        if not filled or int(filled) < 2:
+            return False
+
+        def _label(control: Any) -> str:
+            try:
+                return " ".join(
+                    filter(
+                        None,
+                        [
+                            control.inner_text() or "",
+                            control.get_attribute("value") or "",
+                            control.get_attribute("aria-label") or "",
+                        ],
+                    )
+                ).strip()
+            except Exception:
+                return ""
+
+        def _click(control: Any) -> bool:
+            if not control:
+                return False
+            if re.search(self._SOCIAL_BUTTON_RE, _label(control), re.IGNORECASE):
+                return False
+            try:
+                control.scroll_into_view_if_needed(timeout=2000)
+                control.click(timeout=5000)
+                return True
+            except Exception as exc:
+                logger.debug("Login control click failed: %s", safe_error_message(exc))
+                return False
+
+        # Prefer the submit control of the form that owns the password field.
+        try:
+            form = page.query_selector("form:has(input[type=password])")
+            if form:
+                for selector in ("button[type=submit]", "input[type=submit]", "button"):
+                    if _click(form.query_selector(selector)):
+                        return True
+        except Exception:
+            pass
+
+        # Fallback: scan every control for a login label, skipping social ones.
+        try:
+            controls = page.query_selector_all("button, input[type=submit], a[role=button]")
+        except Exception:
+            controls = []
+        for control in controls:
+            if re.search(self._LOGIN_BUTTON_RE, _label(control), re.IGNORECASE) and _click(control):
+                return True
+
+        # Last resort: submit the form directly / press Enter in the password box.
+        try:
+            submitted = page.evaluate(
+                """
+                () => {
+                  const password = document.querySelector('input[type=password]');
+                  const scope = (password && password.form) ? password.form : document.querySelector('form');
+                  if (!scope) return false;
+                  if (typeof scope.requestSubmit === 'function') { scope.requestSubmit(); return true; }
+                  scope.submit(); return true;
+                }
+                """
+            )
+            if submitted:
+                return True
+        except Exception as exc:
+            logger.debug("Fallback login submit failed: %s", safe_error_message(exc))
+        try:
+            page.keyboard.press("Enter")
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _login_moved_on(page: Any, original_url: str) -> bool:
+        try:
+            current = (page.url or "").lower()
+        except Exception:
+            return False
+        return not any(part in current for part in ("/login", "sign-in", "signin", "anmelden"))
 
     @staticmethod
     def _read_turnstile_token(page: Any) -> str | None:

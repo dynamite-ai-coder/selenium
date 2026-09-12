@@ -219,12 +219,59 @@ class BrowserManager:
             logger.debug("Error while closing browser session: %s", safe_error_message(exc))
 
     # -- cloudflare bypass --------------------------------------------------
-    async def bypass_cloudflare(self, url: str) -> dict:
+    async def read_login_fields(self) -> dict | None:
+        """Read the credentials already typed into the agent's focused page.
+
+        Used by the Turnstile path: the stealth browser replays the real login
+        so the site's own challenge flow runs, and the session cookies are
+        transplanted. Returns ``None`` when no email/password pair is present,
+        and never logs the values.
+        """
+        session = self._session
+        if session is None:
+            return None
+        try:
+            cdp_session = await session.get_or_create_cdp_session()
+            result = await asyncio.wait_for(
+                cdp_session.cdp_client.send.Runtime.evaluate(
+                    params={
+                        "expression": """
+                        (() => {
+                          const email = document.querySelector(
+                            'input[type=email], input[name*=user i], input[name*=email i], '
+                            + 'input[name*=login i]'
+                          );
+                          const password = document.querySelector('input[type=password]');
+                          const value = (el) => (el && typeof el.value === 'string')
+                            ? el.value.trim() : '';
+                          return { email: value(email), password: value(password) };
+                        })()
+                        """,
+                        "returnByValue": True,
+                    },
+                    session_id=cdp_session.session_id,
+                ),
+                timeout=5.0,
+            )
+        except Exception as exc:
+            logger.debug("Could not read login fields: %s", safe_error_message(exc))
+            return None
+        data = result.get("result", {}).get("value") or {}
+        email = str(data.get("email") or "").strip()
+        password = str(data.get("password") or "")
+        if email and password:
+            return {"email": email, "password": password}
+        return None
+
+    async def bypass_cloudflare(self, url: str, login: dict | None = None) -> dict:
         """Solve a Cloudflare interstitial in stealth Firefox and transplant it.
 
         Runs invisible_playwright (patched Firefox) against ``url``, then
         injects the resulting cookies and the matching User-Agent into the
-        agent's visible Chromium over CDP and reloads the page.
+        agent's visible Chromium over CDP and reloads the page. When ``login``
+        carries the credentials typed into the agent's page, the stealth
+        browser performs the real login (so the site's own Turnstile flow runs
+        with a genuine click) and only the session cookies are transplanted.
 
         Returns the bypass result dict (``success``, ``cookies``,
         ``cf_clearance``, ``user_agent``, ``applied``, ...).
@@ -242,6 +289,7 @@ class BrowserManager:
             timezone=settings.browser_tz,
             profile_dir=str(profile_path) if profile_path else None,
             click_turnstile=settings.cf_bypass_click_turnstile,
+            login=login,
         )
         result = await bypass.solve(url)
         if result.get("success"):

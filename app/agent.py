@@ -300,7 +300,12 @@ class AgentRunner:
             return
         self._bypass_attempts[host] = now
 
+        login = None
         if kind == "turnstile":
+            login = await browser_manager.read_login_fields()
+        if kind == "turnstile" and login:
+            message = "Turnstile challenge detected. Logging in through a stealth browser..."
+        elif kind == "turnstile":
             message = "Turnstile challenge detected. Solving in a stealth browser..."
         else:
             message = "Cloudflare challenge detected. Solving in a stealth browser..."
@@ -308,7 +313,7 @@ class AgentRunner:
 
         try:
             result = await asyncio.wait_for(
-                browser_manager.bypass_cloudflare(target_url),
+                browser_manager.bypass_cloudflare(target_url, login=login),
                 timeout=settings.cf_bypass_timeout + 60,
             )
         except asyncio.TimeoutError:
@@ -323,6 +328,8 @@ class AgentRunner:
                     message = "Turnstile solved and login resubmitted. Watching the response..."
                 else:
                     message = "Turnstile solved and injected. Retry the action..."
+            elif result.get("mode") == "login":
+                message = "Logged in through the stealth browser. Session transplanted."
             else:
                 message = "Cloudflare bypassed. Continuing..."
             await emit("agent_action", message, step=step_number, url=display_url, title=title)
