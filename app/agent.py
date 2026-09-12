@@ -103,6 +103,8 @@ class AgentRunner:
         self._started_at: float = 0.0
         # host -> last bypass attempt (monotonic-ish epoch), avoids loops.
         self._bypass_attempts: dict[str, float] = {}
+        # Verdict from the site when it rejected the credentials outright.
+        self._last_login_error: str | None = None
 
     @property
     def busy(self) -> bool:
@@ -120,6 +122,7 @@ class AgentRunner:
         task_id = uuid.uuid4().hex[:12]
         self._task_id = task_id
         self._stop_requested = False
+        self._last_login_error = None
         self._started_at = time.time()
         self._task = asyncio.create_task(
             self._run(task_id, task_text, files or []), name=f"agent-task-{task_id}"
@@ -233,7 +236,7 @@ class AgentRunner:
             await emit("task_completed", result or "Task completed.", task_id=task_id, steps=steps)
             logger.info("Task %s completed in %d steps", task_id, steps)
         else:
-            message = result or "The agent could not complete the task."
+            message = result or self._last_login_error or "The agent could not complete the task."
             await emit("task_failed", message, task_id=task_id, steps=steps)
             logger.warning("Task %s did not complete successfully", task_id)
 
@@ -328,13 +331,18 @@ class AgentRunner:
         else:
             if result.get("mode") == "login_error":
                 # The site answered with its own verdict; retrying the same
-                # credentials will not change it, so stop for this task.
+                # credentials will not change it, so stop the task now.
                 self._bypass_attempts[host] = time.time() + 86_400
                 message = result.get("site_error") or result.get("error") or "login rejected"
+                self._last_login_error = f"Login failed: {message}"
+                self._stop_requested = True
+                if self._agent is not None:
+                    with contextlib.suppress(Exception):
+                        self._agent.stop()
                 logger.warning("Login rejected for %s: %s", host, message)
                 await emit(
                     "agent_action",
-                    f"Login failed: {message}",
+                    self._last_login_error,
                     step=step_number,
                     url=display_url,
                     title=title,

@@ -266,10 +266,15 @@ User-Agent and the egress IP, so both browsers must share `BROWSER_PROXY`; the
 User-Agent override is re-applied automatically after a reconnect.
 
 **Embedded Turnstile** (a login form that verifies after the submit). A cookie
-cannot carry the widget's response, so the stealth browser triggers the widget,
-captures the single-use `cf-turnstile-response` token and injects it into the
-agent's page (no reload, so the filled form is preserved). The agent should
-retry the submit within a few minutes.
+cannot carry the widget's response, so the stealth browser replays the login
+itself: it fills the e-mail, follows two-step password flows, types the
+password with real key events and clicks the form's own login control, so the
+site's Turnstile flow runs with a genuine click. The resulting session cookies
+(and the matching User-Agent) are transplanted into the agent's browser and the
+page is reloaded - the agent is then logged in without ever holding the token.
+If the site answers with its own rejection (for example *invalid credentials*),
+the solver returns that verdict, the runner surfaces `Login failed: ...`,
+stops retrying and the task ends with that message instead of timing out.
 
 The stealth engine (patched Firefox, ~260 MB download / 550 MB unpacked) is
 pre-fetched in the Docker image. Locally run it once:
@@ -287,7 +292,10 @@ fingerprint, not the IP reputation.
 
 Limitations: the token/cookie transplant cannot solve a Turnstile widget whose
 token is bound to a different sitekey, and site-specific extra checks (fraud
-scores, OTP, e-mail confirmation) still need the agent or the user.
+scores, OTP, e-mail confirmation) still need the agent or the user. A site
+using an invisible/non-interactive sitekey may silently issue no token at all
+for a high-risk IP; the login then cannot complete and the task reports the
+site's verdict. Residential/mobile `BROWSER_PROXY` is the fix for that case.
 
 ## 13. Render memory considerations
 
