@@ -181,7 +181,8 @@ def test_click_turnstile_uses_bounding_box():
     page = FakeMousePage()
     bypass = CloudflareBypass()
     assert bypass._click_turnstile(page) is True
-    assert ("click", 134.0, 232.5) in page.mouse.clicks
+    assert ("move", 99.0, 217.5) in page.mouse.clicks
+    assert ("click", 124.0, 232.5) in page.mouse.clicks
 
 
 # ---------------------------------------------------------------------------
