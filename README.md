@@ -19,6 +19,10 @@ single Docker container and is ready to deploy on **Render**.
   Xvfb + XFCE, never headless.
 - Browser Use attaches to that same visible browser over the Chrome DevTools
   Protocol and performs every action on it.
+- Cloudflare is handled with
+  [invisible_playwright](https://github.com/feder-cr/invisible_playwright): a
+  patched stealth Firefox solves the challenge and its cookies, User-Agent and
+  Turnstile response token are transplanted into the visible browser over CDP.
 - Live browser view is embedded with noVNC in the right-hand panel.
 - Real-time WebSocket status: `task_started`, `agent_action`, `task_completed`,
   `task_failed`, `browser_connected`, `browser_disconnected`, `error`, ...
@@ -43,8 +47,12 @@ FastAPI (app/main.py)                     ┌───────────�
                                           │   ▲                          │
                                           │ x11vnc :5900                 │
                                           │   ▲                          │
-                                          │ websockify :6080 (noVNC)     │
-                                          └──────────────────────────────┘
+                                           │ websockify :6080 (noVNC)     │
+                                           └──────────────────────────────┘
+app/cloudflare_bypass.py ────────────────► ┌──────────────────────────────┐
+  (cookies + User-Agent +                 │ invisible_playwright Firefox │
+   Turnstile token transfer)  ◄────────── │ (patched, stealth)           │
+                                           └──────────────────────────────┘
 ```
 
 - `app/main.py` - FastAPI routes, auth middleware, WebSocket endpoints, noVNC proxy.
@@ -53,10 +61,14 @@ FastAPI (app/main.py)                     ┌───────────�
 - `app/llm.py` - LLM provider abstraction (DeepSeek by default).
 - `app/agent.py` - async Browser Use runner with safe status events + cancellation.
 - `app/browser.py` - connects Browser Use to the visible Chromium over CDP;
-  reads the real endpoint published by the SeleniumBase launcher.
+  reads the real endpoint published by the SeleniumBase launcher and applies
+  the bypass state (cookies, User-Agent, Turnstile token).
+- `app/cloudflare_bypass.py` - invisible_playwright solver (interstitial +
+  embedded Turnstile).
 - `app/websocket.py` - connection manager / event bus.
 - `static/` - dark chat UI + login page.
 - `scripts/start_browser.py` - standalone SeleniumBase Pure CDP Mode launcher.
+- `scripts/check_bypass.py` - standalone end-to-end bypass check.
 - `scripts/` - startup order: Xvfb -> XFCE -> x11vnc/noVNC -> SeleniumBase Chromium -> uvicorn.
 - `Dockerfile`, `render.yaml` - container and Render blueprint.
 
@@ -66,7 +78,7 @@ FastAPI (app/main.py)                     ┌───────────�
 | --- | --- | --- |
 | `APP_PASSWORD` | *(empty)* | Password for the web UI. **Required.** |
 | `DEEPSEEK_API_KEY` | *(empty)* | DeepSeek API key. **Required for tasks.** |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Model id (`deepseek-chat`, `deepseek-reasoner`, ...). |
+| `DEEPSEEK_MODEL` | `deepseek-flash` | Model id (`deepseek-flash`, `deepseek-v4-pro`, ...). |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/v1` | OpenAI-compatible endpoint. |
 | `SESSION_SECRET` | auto-generated | Stable random value so sessions survive restarts. |
 | `COOKIE_SECURE` | auto-detect | Force the `Secure` cookie flag. |
@@ -83,10 +95,14 @@ FastAPI (app/main.py)                     ┌───────────�
 | `BROWSER_TZ` | *(empty)* | IANA timezone reported by the browser, e.g. `Europe/Warsaw`. Keep it consistent with the proxy. |
 | `BROWSER_LANG` | *(empty)* | UI language/locale, e.g. `pl-PL` or `en-US`. |
 | `BROWSER_GEOLOCATION` | *(empty)* | Geolocation reported by the browser: `lat,lon`, e.g. `52.2297,21.0122`. |
-| `CF_BYPASS_ENABLED` | `false` | Enable automatic Cloudflare Turnstile bypass using SeleniumBase UC Mode. |
-| `CF_BYPASS_TIMEOUT` | `60` | Timeout for Cloudflare bypass attempts (seconds). |
-| `CF_BYPASS_RECONNECT_TIME` | `5` | Reconnect time for UC mode (seconds). |
-| `CF_BYPASS_INCognito` | `false` | Use incognito mode for Cloudflare bypass. |
+| `CF_BYPASS_ENABLED` | `true` | Automatic Cloudflare handling via invisible_playwright. |
+| `CF_BYPASS_TIMEOUT` | `90` | Timeout for a single bypass attempt (seconds). |
+| `CF_BYPASS_HEADLESS` | `true` | Run the stealth browser headless (`false` shows it in noVNC). |
+| `CF_BYPASS_SEED` | `0` | `0` = random fingerprint per solve; fixed integer = reproducible. |
+| `CF_BYPASS_LOCALE` | `auto` | Stealth browser language (`auto` follows the proxy egress). |
+| `CF_BYPASS_PROFILE_DIR` | *(empty)* | Optional persistent stealth profile. |
+| `CF_BYPASS_CLICK_TURNSTILE` | `true` | Click the Turnstile checkbox on interactive challenges. |
+| `CF_BYPASS_COOLDOWN` | `90` | Minimum seconds between attempts for the same host. |
 | `UPLOADS_DIR` / `DOWNLOADS_DIR` | `uploads` / `downloads` | File directories. |
 | `MAX_UPLOAD_MB` | `10` | Upload size limit. |
 | `AGENT_MAX_STEPS` | `100` | Browser Use step limit. |
@@ -100,6 +116,7 @@ FastAPI (app/main.py)                     ┌───────────�
 cp .env.example .env          # edit APP_PASSWORD and DEEPSEEK_API_KEY
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+python -m invisible_playwright fetch   # once; downloads the stealth Firefox
 
 # SeleniumBase pins its own dependencies (they conflict with Browser Use),
 # so install it in a separate environment and point the launcher at it:
@@ -140,7 +157,7 @@ Useful overrides:
 docker run --rm -p 10000:10000 \
   -e APP_PASSWORD='change-me' \
   -e DEEPSEEK_API_KEY='sk-...' \
-  -e DEEPSEEK_MODEL='deepseek-v4-flash' \
+  -e DEEPSEEK_MODEL='deepseek-flash' \
   -e SCREEN_WIDTH=1600 -e SCREEN_HEIGHT=900 \
   --shm-size=1g \
   ai-browser-agent
@@ -152,13 +169,14 @@ published to `CDP_URL_FILE`), then uvicorn on `$PORT`. Only port `10000` needs
 to be published - VNC (5900) and websockify (6080) are bound to localhost, and
 the noVNC WebSocket is proxied through FastAPI after authentication. The image
 keeps SeleniumBase in `/opt/seleniumbase-venv` so its dependency pins cannot
-conflict with Browser Use.
+conflict with Browser Use, and pre-downloads the stealth Firefox to
+`/opt/invisible-playwright` (`INVISIBLE_PLAYWRIGHT_CACHE_DIR`).
 
 ## 6. Configuring DeepSeek
 
 1. Create an API key at <https://platform.deepseek.com>.
 2. Set `DEEPSEEK_API_KEY` in `.env` (local) or Render Environment Variables.
-3. Optionally set `DEEPSEEK_MODEL` (default `deepseek-v4-flash`).
+3. Optionally set `DEEPSEEK_MODEL` (default `deepseek-flash`).
 4. Use a different OpenAI-compatible provider by changing
    `DEEPSEEK_BASE_URL`; the browser agent is provider-agnostic through
    `app/llm.py`.
@@ -226,40 +244,50 @@ reports `task_stopped`. Only one task can run at a time; a second request gets
 | XFCE does not start | Ensure `dbus-x11` is installed and `HOME` is writable by the runtime user. |
 | `Target closed` errors | Restart the task or use **Reconnect browser**; the monitor reconnects automatically. |
 | Slow first task | Chromium cold start + model latency; the first action can take a few seconds. |
-| Cloudflare / "Verify you are human" | Run `python scripts/check_stealth.py` and compare with <https://bot-detector.rebrowser.net/>. The Render datacenter IP is usually the dominant signal - configure `BROWSER_PROXY` (residential/mobile) first, keep `BROWSER_TZ`/`BROWSER_LANG` consistent with it. The live noVNC view can also be used to complete a challenge manually. |
+| Cloudflare / "Verify you are human" | Run `python scripts/check_bypass.py` inside the container (it uses the same solver as the agent). The Render datacenter IP is usually the dominant signal - configure `BROWSER_PROXY` (residential/mobile) first, keep `BROWSER_TZ`/`BROWSER_LANG` consistent with it. The live noVNC view can also be used to complete a challenge manually. |
+| `invisible-playwright` engine missing | Rebuild the image or run `INVISIBLE_PLAYWRIGHT_CACHE_DIR=/opt/invisible-playwright python -m invisible_playwright fetch`. On non-glibc hosts (e.g. Alpine/musl) the engine cannot launch - use the Docker image. |
 
-## 12b. Cloudflare Turnstile Bypass
+## 12b. Cloudflare handling (invisible_playwright)
 
-The agent includes automatic Cloudflare Turnstile bypass powered by
-[SeleniumBase UC Mode](https://github.com/1837620622/cloudflare-bypass-2026).
+The agent handles Cloudflare automatically with
+[invisible_playwright](https://github.com/feder-cr/invisible_playwright), a
+patched stealth Firefox with a coherent fingerprint and humanised input. The
+visible Chromium is still the browser the agent drives; the stealth browser is
+only used to pass the challenge, and its state is transplanted over CDP.
 
-**How it works:**
-- `app/cloudflare_bypass.py` provides async bypass using SeleniumBase UC Mode
-- Detects Cloudflare challenge pages by DOM/text indicators
-- Performs OS-level captcha click via `uc_gui_click_captcha`
-- Exports `cf_clearance` cookie for session reuse
+Two protections are handled:
 
-**Configuration (.env):**
+**Interstitial challenge** (`Just a moment...`). `app/cloudflare_bypass.py`
+opens the URL in the stealth browser, waits for the challenge to clear, then
+`BrowserManager.apply_bypass_state()` injects the resulting cookies
+(`cf_clearance`, `__cf_bm`, ...) and the matching User-Agent into the visible
+browser and reloads the page. Cloudflare binds `cf_clearance` to the
+User-Agent and the egress IP, so both browsers must share `BROWSER_PROXY`; the
+User-Agent override is re-applied automatically after a reconnect.
+
+**Embedded Turnstile** (a login form that verifies after the submit). A cookie
+cannot carry the widget's response, so the stealth browser triggers the widget,
+captures the single-use `cf-turnstile-response` token and injects it into the
+agent's page (no reload, so the filled form is preserved). The agent should
+retry the submit within a few minutes.
+
+The stealth engine (patched Firefox, ~260 MB download / 550 MB unpacked) is
+pre-fetched in the Docker image. Locally run it once:
+
 ```bash
-CF_BYPASS_ENABLED=true          # Enable bypass
-CF_BYPASS_TIMEOUT=60            # Timeout in seconds
-CF_BYPASS_RECONNECT_TIME=5      # UC reconnect time
-CF_BYPASS_INCognito=false       # Use incognito mode
+python -m invisible_playwright fetch
+python scripts/check_bypass.py                 # end-to-end check
+python scripts/check_bypass.py --headless false  # watch it in the desktop
 ```
 
-**Requirements:**
-- SeleniumBase must be installed in the isolated venv (`/opt/seleniumbase-venv`)
-- Residential/mobile proxy strongly recommended (datacenter IPs are flagged)
-- Headed browser with display (Xvfb on Linux servers)
+Requirements: a glibc Linux (the Docker image), macOS or Windows host.
+Residential/mobile `BROWSER_PROXY` is strongly recommended - datacenter IPs
+are challenged more aggressively, and `CF_BYPASS_SEED` only fixes the
+fingerprint, not the IP reputation.
 
-**Usage in code:**
-```python
-from app.cloudflare_bypass import bypass_url
-
-result = await bypass_url("https://example.com", proxy="http://proxy:8080")
-if result["success"]:
-    print(result["cf_clearance"])
-```
+Limitations: the token/cookie transplant cannot solve a Turnstile widget whose
+token is bound to a different sitekey, and site-specific extra checks (fraud
+scores, OTP, e-mail confirmation) still need the agent or the user.
 
 ## 13. Render memory considerations
 
@@ -283,7 +311,9 @@ restarts. `--shm-size` does not apply on Render; the image passes
   mobile) is the single most effective mitigation for bot challenges.
 - Anti-bot systems (Cloudflare, DataDome, ...) also detect the automation
   protocol itself: Browser Use attaches over CDP and calls `Runtime.enable`
-  (`browser_use/actor/page.py`), which is a known signal. Browser-side flags
-  help, but no configuration can guarantee that an automated session will
-  never be challenged - treat challenges as expected and only automate pages
-  you are allowed to automate.
+  (`browser_use/actor/page.py`), which is a known signal. The
+  invisible_playwright solver exists precisely because of that: it passes the
+  challenge in a separate, un-automated browser and transplants only the
+  result. No configuration can guarantee that an automated session will never
+  be challenged - treat challenges as expected and only automate pages you are
+  allowed to automate.

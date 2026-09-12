@@ -27,6 +27,21 @@ class LLMConfigError(RuntimeError):
     """Raised when the LLM cannot be configured (e.g. missing API key)."""
 
 
+class AgentChatDeepSeek(ChatDeepSeek):
+    """DeepSeek chat model that always runs with thinking mode disabled.
+
+    Browser Use needs forced tool calls for its action schemas. DeepSeek
+    thinking models reject a forced ``tool_choice`` with "Thinking mode does
+    not support this tool_choice" unless thinking is explicitly disabled.
+    Upstream only sends the disable flag for names containing "deepseek-v4",
+    so a model such as ``deepseek-flash`` would fail on every step. Overriding
+    this makes any configured model work with the agent.
+    """
+
+    def _supports_thinking(self) -> bool:  # noqa: D102 - upstream hook
+        return True
+
+
 def get_llm() -> BaseChatModel:
     """Build the chat model used by the browser agent."""
     api_key = settings.deepseek_api_key
@@ -37,10 +52,10 @@ def get_llm() -> BaseChatModel:
         )
 
     register_secret(api_key)
-    model = settings.deepseek_model or "deepseek-v4-flash"
+    model = settings.deepseek_model or "deepseek-flash"
     logger.info("Configuring DeepSeek model '%s'", model)
 
-    return ChatDeepSeek(
+    return AgentChatDeepSeek(
         model=model,
         api_key=api_key,
         base_url=settings.deepseek_base_url,

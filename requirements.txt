@@ -1,12 +1,14 @@
 # Core agent framework (pulls pydantic, openai, cdp-use, ... pinned by upstream)
 browser-use==0.13.10
 
+# Cloudflare bypass: patched stealth Firefox driven through a Playwright API.
+# The engine binary is downloaded at image build time (see Dockerfile).
+invisible-playwright==0.14.0
+
 # SeleniumBase (SeleniumBase Pure CDP Mode browser launcher) is intentionally
 # NOT listed here: its dependency pins conflict with browser-use. The Dockerfile
 # and scripts/start_browser.sh install/run it from an isolated environment
 # (/opt/seleniumbase-venv) instead.
-# NOTE: The Cloudflare bypass module (app/cloudflare_bypass.py) also requires
-# SeleniumBase UC Mode, which is available in the same isolated venv.
 
 # Web framework / server
 fastapi==0.141.1

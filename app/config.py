@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # --- DeepSeek / LLM -----------------------------------------------------
     deepseek_api_key: str = ""
-    deepseek_model: str = "deepseek-v4-flash"
+    deepseek_model: str = "deepseek-flash"
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_temperature: float = 0.0
     deepseek_timeout: float = 120.0
@@ -77,11 +77,21 @@ class Settings(BaseSettings):
     vnc_port: int = 5900
     novnc_port: int = 6080
 
-    # --- Cloudflare Bypass ---------------------------------------------------
+    # --- Cloudflare Bypass (invisible_playwright stealth Firefox) ------------
     cf_bypass_enabled: bool = True
-    cf_bypass_timeout: float = 60.0
-    cf_bypass_reconnect_time: float = 5.0
-    cf_bypass_incognito: bool = False
+    cf_bypass_timeout: float = 90.0
+    # The patched Firefox is undetected headless too; run it headed to watch
+    # the solve in the live noVNC preview instead.
+    cf_bypass_headless: bool = True
+    # 0 = random fingerprint per solve; any other value is reproducible.
+    cf_bypass_seed: int = 0
+    # "auto" derives the language from the egress IP (matches BROWSER_PROXY).
+    cf_bypass_locale: str = "auto"
+    # Empty = one-off profile; set to reuse the stealth profile between solves.
+    cf_bypass_profile_dir: str = ""
+    cf_bypass_click_turnstile: bool = True
+    # Minimum seconds between bypass attempts for the same host.
+    cf_bypass_cooldown: float = 90.0
 
     # --- Agent --------------------------------------------------------------
     agent_max_steps: int = 100
@@ -98,6 +108,12 @@ class Settings(BaseSettings):
     @property
     def browser_profile_path(self) -> Path:
         return self._resolve(self.browser_profile_dir)
+
+    @property
+    def cf_bypass_profile_path(self) -> Path | None:
+        if not self.cf_bypass_profile_dir.strip():
+            return None
+        return self._resolve(self.cf_bypass_profile_dir)
 
     @property
     def downloads_path(self) -> Path:

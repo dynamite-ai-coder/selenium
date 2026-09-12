@@ -14,7 +14,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SCREEN_WIDTH=1920 \
     SCREEN_HEIGHT=1080 \
     NOVNC_DIR=/usr/share/novnc \
-    BROWSER_HEADLESS=false
+    BROWSER_HEADLESS=false \
+    INVISIBLE_PLAYWRIGHT_CACHE_DIR=/opt/invisible-playwright
 
 # Use the real Google Chrome (not Debian's Chromium build) on amd64 to keep
 # the TLS/UA/JS fingerprint consistent with a normal browser. On other
@@ -41,6 +42,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       procps \
       tini \
+      libgtk-3-0 \
+      libdbus-glib-1-2 \
+      libasound2 \
+      libx11-xcb1 \
+      libxt6 \
+      libxtst6 \
+      libxcomposite1 \
+      libxdamage1 \
+      libxfixes3 \
+      libxrandr2 \
+      libgbm1 \
+      libxshmfence1 \
+      libatk1.0-0 \
+      libatk-bridge2.0-0 \
+      libatspi2.0-0 \
+      libcups2 \
+      libdrm2 \
+      libnspr4 \
+      libnss3 \
+      libpango-1.0-0 \
+      libcairo2 \
     && if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
          curl -fsSL -o /tmp/google-chrome.deb \
            https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
@@ -57,6 +79,12 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir -r requirements.txt
+
+# Pre-download the stealth Firefox used for Cloudflare bypass (invisible_playwright).
+# Doing it at build time keeps container startup fast and lets the runtime user
+# run read-only against the cache.
+RUN python -m invisible_playwright fetch \
+ && chmod -R a+rX /opt/invisible-playwright
 
 # SeleniumBase drives the visible Chromium in Pure CDP Mode. Its latest
 # dependency pins (typing-extensions, requests, rich, ...) conflict with

@@ -14,11 +14,12 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from browser_use import Agent
 
 from app.browser import BrowserUnavailableError, browser_manager
-from app.cf_turnstile import solve_turnstile, _is_cloudflare_page
+from app.cloudflare_bypass import detect_challenge
 from app.config import settings
 from app.llm import LLMConfigError, get_llm
 from app.utils import register_secret, safe_error_message, truncate
@@ -73,6 +74,19 @@ def _safe_url(url: str | None) -> str:
     return ""
 
 
+def _step_interacted(agent_output: Any) -> bool:
+    """True when the step clicked/typed, i.e. a form submit may have run."""
+    try:
+        actions = getattr(agent_output, "action", None) or []
+        for action in actions:
+            data = action.model_dump(exclude_none=True) if hasattr(action, "model_dump") else {}
+            if any(name in data for name in ("click", "input", "send_keys", "select_dropdown")):
+                return True
+    except Exception:  # pragma: no cover - never break the agent step
+        pass
+    return False
+
+
 def _action_labels(agent_output: Any) -> list[str]:
     labels: list[str] = []
     try:
@@ -100,6 +114,8 @@ class AgentRunner:
         self._stop_requested = False
         self._task_id: str | None = None
         self._started_at: float = 0.0
+        # host -> last bypass attempt (monotonic-ish epoch), avoids loops.
+        self._bypass_attempts: dict[str, float] = {}
 
     @property
     def busy(self) -> bool:
@@ -242,17 +258,78 @@ class AgentRunner:
         with contextlib.suppress(Exception):
             await self._emit_new_downloads(self._started_at)
 
-        # Auto-solve Cloudflare Turnstile if enabled
+        # Auto-solve Cloudflare interstitials/Turnstile with invisible_playwright.
         if settings.cf_bypass_enabled:
             with contextlib.suppress(Exception):
-                cdp_url = browser_manager.cdp_url
-                if cdp_url and await _is_cloudflare_page(cdp_url):
-                    await emit("agent_action", "Cloudflare detected, solving captcha...", step=step_number, url=url, title=title)
-                    result = await solve_turnstile(cdp_url, max_attempts=3, timeout=25.0)
-                    if result["solved"]:
-                        await emit("agent_action", "Cloudflare bypassed!", step=step_number, url=url, title=title)
-                    else:
-                        await emit("agent_action", f"Cloudflare bypass failed: {result.get('error', 'unknown')}", step=step_number, url=url, title=title)
+                await self._maybe_bypass_cloudflare(
+                    browser_state_summary,
+                    agent_output,
+                    step_number,
+                    url,
+                    title,
+                )
+
+    async def _maybe_bypass_cloudflare(
+        self,
+        browser_state_summary: Any,
+        agent_output: Any,
+        step_number: int,
+        display_url: str,
+        title: str,
+    ) -> None:
+        """Detect Cloudflare, solve it in stealth Firefox, transplant the result."""
+        session = browser_manager.session
+        if session is None:
+            return
+        kind = await detect_challenge(session)
+        if kind is None:
+            return
+        # A Turnstile widget is common on forms; only act when the agent has
+        # just interacted with the page (usually the submit that triggered it).
+        if kind == "turnstile" and not _step_interacted(agent_output):
+            return
+
+        target_url = getattr(browser_state_summary, "url", "") or display_url
+        host = urlsplit(target_url).netloc.lower()
+        now = time.time()
+        last = self._bypass_attempts.get(host, 0.0)
+        if now - last < settings.cf_bypass_cooldown:
+            return
+        self._bypass_attempts[host] = now
+
+        if kind == "turnstile":
+            message = "Turnstile challenge detected. Solving in a stealth browser..."
+        else:
+            message = "Cloudflare challenge detected. Solving in a stealth browser..."
+        await emit("agent_action", message, step=step_number, url=display_url, title=title)
+
+        result = await browser_manager.bypass_cloudflare(target_url)
+        if result.get("success") and result.get("applied"):
+            logger.info("Cloudflare bypass applied for %s (mode=%s)", host, result.get("mode"))
+            if result.get("mode") == "turnstile_token":
+                message = "Turnstile solved and injected. Retry the action..."
+            else:
+                message = "Cloudflare bypassed. Continuing..."
+            await emit("agent_action", message, step=step_number, url=display_url, title=title)
+        elif result.get("success"):
+            logger.warning("Cloudflare bypass not applied for %s: %s", host, result.get("apply_error"))
+            await emit(
+                "agent_action",
+                "Challenge solved, but session transfer failed.",
+                step=step_number,
+                url=display_url,
+                title=title,
+            )
+        else:
+            message = result.get("error") or "unknown error"
+            logger.warning("Cloudflare bypass failed for %s: %s", host, message)
+            await emit(
+                "agent_action",
+                f"Cloudflare bypass failed: {message}",
+                step=step_number,
+                url=display_url,
+                title=title,
+            )
 
     async def _on_done(self, history: Any) -> None:
         logger.debug("Agent signalled completion")
